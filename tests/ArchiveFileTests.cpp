@@ -8,6 +8,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -255,10 +256,56 @@ void CheckCancellation(const std::filesystem::path &path,
 }
 #endif
 
+void BenchmarkSequential(const std::filesystem::path &archive_path) {
+  std::vector<uint8_t> payload(8 * 1024 * 1024);
+  uint32_t prng = 0x321fabcd;
+  for (auto &byte : payload) {
+    prng ^= prng << 13;
+    prng ^= prng >> 17;
+    prng ^= prng << 5;
+    byte = static_cast<uint8_t>(prng);
+  }
+  Check(ArchiveTests::CreateArchive(archive_path, payload), "create benchmark archive");
+  const auto member = Common::MakeArchivePath(archive_path, "assets/subdir/data.bin");
+
+  using namespace Common::DebugCounters;
+  SetBenchmarkEnabled(true);
+  std::puts("read_ahead,elapsed_ms,backend_reads,cache_hits");
+  for (unsigned pair = 0; pair < 10; ++pair) {
+    for (unsigned index = 0; index < 2; ++index) {
+      const auto read_ahead = (pair + index) % 2;
+      Common::SetArchiveReadAheadEnabled(read_ahead != 0);
+      Common::File file(member, Common::File::Mode::Read);
+      Check(!file.IsInvalid(), "open benchmark member");
+      std::array<uint8_t, 4096> buffer{};
+      const auto calls_before = Get(Counter::ArchiveBackendReads);
+      const auto hits_before = Get(Counter::ArchiveReadAheadHits);
+      const auto start = std::chrono::steady_clock::now();
+      for (size_t offset = 0; offset < payload.size(); offset += buffer.size()) {
+        uint32_t count = 0;
+        file.Read(buffer.data(), buffer.size(), &count);
+        Check(count == buffer.size() &&
+                  std::equal(buffer.begin(), buffer.end(), payload.begin() + offset),
+              "benchmark preserves member bytes");
+      }
+      const auto ms = std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - start).count();
+      std::printf("%u,%.3f,%" PRIu64 ",%" PRIu64 "\n", read_ahead, ms,
+                  Get(Counter::ArchiveBackendReads) - calls_before,
+                  Get(Counter::ArchiveReadAheadHits) - hits_before);
+    }
+  }
+}
+
 } // namespace
 
-int main() {
+int main(int argc, char **argv) {
   TempDirectory temporary;
+  if (argc == 2 && std::strcmp(argv[1], "--benchmark-sequential") == 0) {
+    BenchmarkSequential(temporary.Path() / "benchmark.zar");
+    return 0;
+  }
+  Check(argc == 1, "unexpected argument");
   const auto archive_path =
       temporary.Path() / std::filesystem::path(u8"game-テスト.zar");
 

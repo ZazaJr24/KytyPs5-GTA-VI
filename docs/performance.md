@@ -25,10 +25,16 @@ and P99 together, since deferred creation can move work from boot into gameplay.
 ## Experimental ZArchive streaming
 
 Add `--archive-read-ahead` for a ZArchive workload with sequences of small reads. Once the
-worker sees adjacent requests, it can serve subsequent reads from one 128 KiB window. Compare
+same thread reads adjacent data, it can serve subsequent reads from a 128 KiB window. Compare
 `archive_backend_reads`, `archive_read_ahead_hits` and frame times against the same archive
-without the switch. The worker uses a weak reader reference so closing the archive still releases
+without the switch. The window uses a weak reader reference so closing the archive still releases
 the underlying file.
+
+Run `archive_file_tests.exe --benchmark-sequential` from the Windows test artifact to capture
+10 paired trials in CSV. The fixture reads an 8 MiB archive member in 4 KiB chunks and verifies
+every byte. A local Windows Clang test on the Ryzen 7 5700X3D measured median times of 9.364 ms
+with the switch off and 6.491 ms with it on. Backend calls decreased from 2,048 to 65 per trial.
+This fixture measures sequential archive I/O. Game performance needs a separate capture.
 
 ## Automated validation
 
