@@ -50109,6 +50109,11 @@ void CheckShaderStore(VulkanHarness &vulkan) {
   Require(name, "damaged record",
           run() == lost_pipeline && std::filesystem::file_size(store) == size,
           "a damaged record was loaded or not replaced");
+  const auto last_frame = std::ranges::find_end(bytes, zstd_magic).begin() - bytes.begin();
+  flip(last_frame - 9); // The top byte of the last record's uncompressed size.
+  Require(name, "oversized record",
+          run() == lost_pipeline && std::filesystem::file_size(store) == size,
+          "an oversized record was accepted or discarded the valid prefix");
   flip(0);
   Require(name, "stale store", run() == cold && std::filesystem::file_size(store) == size,
           "a store with another header was reused instead of started over");

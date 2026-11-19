@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <fstream>
 #include <fmt/format.h>
 #include <ranges>
 #include <xxhash.h>
@@ -35,6 +36,8 @@ using ShaderRecompiler::IR::Reader;
 using ShaderRecompiler::IR::Writer;
 
 enum class Record : uint8_t { Module, GraphicsPipeline, TessellationLayout };
+
+constexpr uint32_t MaxRecordBytes = 32 * 1024 * 1024;
 
 // Precedes each record's zstd frame.
 struct Frame {
@@ -118,6 +121,9 @@ ShaderStoreWriter::ShaderStoreWriter() {
 }
 
 void ShaderStoreWriter::Append(std::vector<uint8_t>&& record) {
+	if (record.size() > MaxRecordBytes) {
+		return;
+	}
 	Post([this, record = std::move(record)] {
 		std::vector<uint8_t> bytes(sizeof(Frame) + ZSTD_compressBound(record.size()));
 		const auto size = ZSTD_compress(bytes.data() + sizeof(Frame), bytes.size() - sizeof(Frame),
@@ -152,31 +158,57 @@ void PipelineCache::WarmUp(const std::filesystem::path& path) {
 	using Common::DebugCounters::Counter;
 	Common::DebugCounters::ScopedTimer timer(Counter::PipelineWarmupNs);
 	const auto start = std::chrono::steady_clock::now();
-	std::vector<uint8_t> bytes;
-	if (Common::File file;
-	    Common::File::IsFileExisting(path) && file.Open(path, Common::File::Mode::Read)) {
-		bytes.resize(file.Size());
-		uint32_t read = 0;
-		file.Read(bytes.data(), static_cast<uint32_t>(bytes.size()), &read);
-		bytes.resize(read);
-	}
+	std::error_code size_error;
+	const auto size = std::filesystem::file_size(path, size_error);
 	const auto warmup_limit = Config::GetPipelineWarmupLimit();
 	const auto workers = warmup_limit ? std::min(size_t {4}, Common::ParallelThreads())
 	                                  : Common::ParallelThreads();
 	Log::WriteToConsoleAndLog(fmt::format(
 	    "Shader cache: compiling shaders and pipelines from {} ({:.1f} MB) with up to {} threads\n",
-	    Common::PathToString(path), static_cast<double>(bytes.size()) / 1'000'000.0, workers));
+	    Common::PathToString(path), size_error ? 0.0 : static_cast<double>(size) / 1'000'000.0,
+	    workers));
 	std::vector<WarmupEntry> warmup_entries;
-	auto       records = std::span<const uint8_t>(bytes);
-	const bool reusable =
-	    records.size() >= header.size() && std::ranges::equal(records.first(header.size()), header);
-	if (reusable) {
-		records = records.subspan(header.size());
-		while (LoadRecord(records, warmup_entries)) {
+	std::ifstream input(path, std::ios::binary);
+	uint64_t kept = 0;
+	if (input) {
+		std::vector<uint8_t> existing_header(header.size());
+		const auto read = [&](auto& buffer) -> bool {
+			return static_cast<bool>(input.read(reinterpret_cast<char*>(buffer.data()),
+			                                    static_cast<std::streamsize>(buffer.size())));
+		};
+		if (read(existing_header) && existing_header == header) {
+			kept = header.size();
+			std::vector<uint8_t> compressed;
+			std::vector<uint8_t> raw;
+			Frame frame;
+			while (input.read(reinterpret_cast<char*>(&frame), sizeof(frame))) {
+				if (frame.raw_size == 0 || frame.raw_size > MaxRecordBytes ||
+				    frame.compressed_size == 0 ||
+				    frame.compressed_size > ZSTD_compressBound(frame.raw_size)) {
+					break;
+				}
+				compressed.resize(frame.compressed_size);
+				if (!read(compressed) ||
+				    XXH3_64bits(compressed.data(), compressed.size()) != frame.checksum ||
+				    ZSTD_getFrameContentSize(compressed.data(), compressed.size()) != frame.raw_size) {
+					break;
+				}
+				raw.resize(frame.raw_size);
+				if (ZSTD_decompress(raw.data(), raw.size(), compressed.data(), compressed.size()) !=
+				        raw.size() ||
+				    !LoadRecord(raw, warmup_entries)) {
+					break;
+				}
+				kept += sizeof(frame) + compressed.size();
+			}
 		}
+		input.close();
+	} else if (size_error != std::errc::no_such_file_or_directory) {
+		// A failed open can be transient. Leave the existing store alone.
+		return;
 	}
 	// A damaged record ends the store; the records before it stay.
-	m_store.Open(path, header, reusable ? bytes.size() - records.size() : 0);
+	m_store.Open(path, header, kept);
 
 	const auto modules = MapModules();
 	std::vector<Common::UniqueFunction<void>> jobs;
@@ -224,26 +256,9 @@ void PipelineCache::WarmUp(const std::filesystem::path& path) {
 	        .count()));
 }
 
-bool PipelineCache::LoadRecord(std::span<const uint8_t>& records,
+bool PipelineCache::LoadRecord(std::span<const uint8_t> bytes,
                                std::vector<WarmupEntry>& warmup_entries) {
-	Frame frame;
-	if (records.size() < sizeof(frame)) {
-		return false;
-	}
-	std::memcpy(&frame, records.data(), sizeof(frame));
-	if (records.size() - sizeof(frame) < frame.compressed_size) {
-		return false;
-	}
-	const auto compressed = records.subspan(sizeof(frame), frame.compressed_size);
-	if (XXH3_64bits(compressed.data(), compressed.size()) != frame.checksum ||
-	    ZSTD_getFrameContentSize(compressed.data(), compressed.size()) != frame.raw_size) {
-		return false;
-	}
-	std::vector<uint8_t> raw(frame.raw_size);
-	if (ZSTD_decompress(raw.data(), raw.size(), compressed.data(), compressed.size()) != raw.size()) {
-		return false;
-	}
-	Reader     reader {raw};
+	Reader     reader {bytes};
 	auto       type     = Record::Module;
 	const auto complete = [&] { return reader.ok && reader.bytes.empty(); };
 	IoAll(reader, type);
@@ -297,7 +312,6 @@ bool PipelineCache::LoadRecord(std::span<const uint8_t>& records,
 		}
 		default: return false;
 	}
-	records = records.subspan(sizeof(frame) + compressed.size());
 	return true;
 }
 

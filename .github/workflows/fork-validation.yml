@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: fork-validation-${{ github.ref }}
+  group: fork-validation-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -25,25 +25,33 @@ jobs:
         shell: pwsh
         run: |
           Join-Path $env:VCINSTALLDIR 'Tools\Llvm\x64\bin' >> $env:GITHUB_PATH
-          vcpkg install 'glslang[tools,opt]:x64-windows'
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Join-Path (Split-Path (Get-Command vcpkg).Source) 'installed\x64-windows\tools\glslang' >> $env:GITHUB_PATH
+          $zip = Join-Path $env:RUNNER_TEMP 'glslang.zip'
+          $toolDir = Join-Path $env:RUNNER_TEMP 'glslang'
+          Invoke-WebRequest -Uri 'https://github.com/KhronosGroup/glslang/releases/download/16.6.0/glslang-16.6.0-windows-x86_64-release.zip' -OutFile $zip
+          if ((Get-FileHash -LiteralPath $zip).Hash -ne '82bf434e69b9bb4829de7e2b4bc2c5e7a7861e53d66cf75e5cc70f5f694a8d9b') {
+            throw 'Unexpected glslang SHA-256.'
+          }
+          Expand-Archive -LiteralPath $zip -DestinationPath $toolDir
+          $validator = Get-ChildItem -LiteralPath $toolDir -Recurse -File -Filter glslang.exe | Select-Object -First 1
+          if (!$validator) { throw 'glslang executable is missing.' }
+          $validator.DirectoryName >> $env:GITHUB_PATH
       - uses: jurplel/install-qt-action@v4
         with:
           version: '6.10.3'
           arch: win64_msvc2022_64
           cache: true
       - uses: mozilla-actions/sccache-action@v0.0.11
-      - name: Configure, build and test
+      - name: Build and package the Windows emulator
         shell: pwsh
         env:
           SCCACHE_GHA_ENABLED: 'true'
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           cmake -S . -B _Build/windows -G Ninja -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl `
-            -DKYTY_BUILD_ORIGIN=Fork "-DKYTY_BUILD_REPOSITORY=$env:GITHUB_REPOSITORY"
-          cmake --build _Build/windows --target launcher kyty_tests --parallel 3
-          ctest --test-dir _Build/windows --output-on-failure
+            -DKYTY_BUILD_ORIGIN=Fork "-DKYTY_BUILD_REPOSITORY=$env:GITHUB_REPOSITORY" `
+            "-DCMAKE_PREFIX_PATH=$env:Qt6_DIR"
+          cmake --build _Build/windows --target launcher --parallel 3
           cmake --install _Build/windows --prefix _Build/windows/install
           $helpText = & './_Build/windows/install/kyty_emulator.exe' --help | Out-String
           if ($LASTEXITCODE -ne 0 -or $helpText -notmatch '--benchmark-output') {
@@ -54,6 +62,14 @@ jobs:
           name: KytyPs5-GTA-VI-Windows
           path: _Build/windows/install/
           if-no-files-found: error
+      - name: Build and run Windows regression tests
+        shell: pwsh
+        env:
+          SCCACHE_GHA_ENABLED: 'true'
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          cmake --build _Build/windows --target kyty_tests --parallel 3
+          ctest --test-dir _Build/windows --output-on-failure --timeout 480
 
   linux:
     runs-on: ubuntu-24.04
@@ -77,8 +93,9 @@ jobs:
           cmake -S . -B _Build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DKYTY_BUILD_LAUNCHER=OFF \
             -DKYTY_BUILD_ORIGIN=Fork "-DKYTY_BUILD_REPOSITORY=$GITHUB_REPOSITORY"
-          cmake --build _Build/linux --target kyty_emulator kyty_tests --parallel 4
-          ctest --test-dir _Build/linux --output-on-failure
+          cmake --build _Build/linux --target kyty_emulator --parallel 4
           emulator="$(find _Build/linux -type f -name kyty_emulator -print -quit)"
           "$emulator" --help > _Build/linux/emulator-help.txt
           grep -F -- '--benchmark-output' _Build/linux/emulator-help.txt
+          cmake --build _Build/linux --target kyty_tests --parallel 4
+          ctest --test-dir _Build/linux --output-on-failure --timeout 480

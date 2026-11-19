@@ -280,7 +280,7 @@ private:
 
 	// pipelineSerialization.cpp
 	void WarmUp(const std::filesystem::path& path);
-	bool LoadRecord(std::span<const uint8_t>& records, std::vector<WarmupEntry>& warmup_entries);
+	bool LoadRecord(std::span<const uint8_t> bytes, std::vector<WarmupEntry>& warmup_entries);
 	void StoreModule(const ProgramKey& key, const Program& program, const ShaderModule& module,
 	                 const std::vector<uint32_t>& spirv);
 	void StorePipeline(const GraphicsPipelineKey& key);
