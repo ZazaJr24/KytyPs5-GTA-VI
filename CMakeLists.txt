@@ -750,6 +750,7 @@ if(BUILD_TESTING)
 	add_test(NAME resource_tracking COMMAND $<TARGET_FILE:resource_tracking_tests>)
 	add_test(NAME event_queue_lifetime COMMAND $<TARGET_FILE:event_queue_lifetime_tests>)
 	add_test(NAME kernel_file_system COMMAND $<TARGET_FILE:kernel_file_system_tests>)
+	set_tests_properties(kernel_file_system PROPERTIES LABELS hardware_vulkan)
 	add_test(NAME sync_on_address COMMAND $<TARGET_FILE:sync_on_address_tests>)
 	add_test(NAME audio_out2_port COMMAND $<TARGET_FILE:audio_out2_port_tests>)
 	add_test(NAME audio_out_timing COMMAND $<TARGET_FILE:audio_out_timing_tests>)
@@ -799,15 +800,12 @@ if(BUILD_TESTING)
 	add_kyty_vulkan_test(command_scheduler_timeline --scheduler-only)
 	add_kyty_vulkan_test(stream_buffer_ring --stream-buffer-only)
 	add_kyty_vulkan_test(gpu_command_lane --gpu-command-lane-only)
-	add_test(NAME pm4_flip
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --flip-only)
-	add_test(NAME video_out_flip_rate
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --flip-rate-only)
+	add_kyty_vulkan_test(pm4_flip --flip-only)
+	add_kyty_vulkan_test(video_out_flip_rate --flip-rate-only)
 	add_kyty_vulkan_test(video_out_hdr10_to_sdr --video-out-only)
 	add_kyty_vulkan_test(depth_bits --depth-bits-only)
 	add_kyty_vulkan_test(srgb_texture --srgb-texture-only)
-	add_test(NAME device_creation
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --device-creation-only)
+	add_kyty_vulkan_test(device_creation --device-creation-only)
 	add_kyty_vulkan_test(msaa_storage --msaa-storage-only)
 	add_kyty_vulkan_test(pm4_context_state --context-state-only)
 	add_kyty_vulkan_test(gpu_tiler --gpu-tiler-only)
@@ -869,6 +867,7 @@ if(BUILD_TESTING)
 		rtc_tests
 		playgo_tests
 		vr_tracker2_tests
+		psml_tests
 	)
 endif()
 
