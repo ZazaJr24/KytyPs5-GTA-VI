@@ -10,21 +10,28 @@
 #include "updateChecker.h"
 
 #include <QApplication>
+#include <QBuffer>
 #include <QByteArray>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDesktopServices>
 #include <QDialog>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QImage>
+#include <QImageReader>
 #include <QLabel>
+#include <QMenu>
 #include <QMessageBox>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QObject>
-#include <QPainter>
-#include <QPainterPath>
+#include <QPixmap>
 #include <QPointer>
 #include <QProcess>
 #include <QPushButton>
@@ -34,11 +41,14 @@
 #include <QStringList>
 #include <QStyle>
 #include <QStyleHints>
+#include <QToolButton>
+#include <QUrl>
 #include <QVariant>
 #include <QVBoxLayout>
 #include <QtCore>
 
 #include <cstdint>
+#include <memory>
 
 #include "ui_main_dialog.h"
 
@@ -65,47 +75,50 @@ constexpr char SETTINGS_MAIN_LAST_GEOMETRY[] = "geometry";
 constexpr char SETTINGS_CHECK_UPDATES[]      = "check_updates_on_startup";
 constexpr char SETTINGS_CLOSE_TERMINAL[]     = "close_terminal";
 constexpr char SETTINGS_THEME[]              = "theme";
+constexpr char SETTINGS_ARTWORK[]            = "artwork_path";
 
 namespace {
 
-class CoastalHero final: public QWidget {
-public:
-	explicit CoastalHero(QWidget* parent)
-	    : QWidget(parent), m_artwork(QStringLiteral(":/artwork/coastal-drive.png")) {
-		setObjectName(QStringLiteral("coastalHero"));
-		setMinimumHeight(245);
-	}
+constexpr QSize ArtworkPreviewSize {224, 126};
+constexpr auto OfficialArtwork =
+    "https://www.rockstargames.com/VI/_next/static/media/"
+    "Official_Cover_Art_landscape.12.uu2irr.2_a.jpg?akim=1&imdensity=1&imwidth=3840";
+constexpr qsizetype MaxOfficialArtworkBytes = 4 * 1024 * 1024;
 
-protected:
-	void paintEvent(QPaintEvent*) override {
-		QPainter painter(this);
-		painter.setRenderHint(QPainter::Antialiasing);
-		painter.setRenderHint(QPainter::SmoothPixmapTransform);
-		QPainterPath card;
-		card.addRoundedRect(QRectF(rect()), 18, 18);
-		painter.setClipPath(card);
-		painter.fillRect(rect(), QColor("#14121f"));
-		if (!m_artwork.isNull() && width() > 0 && height() > 0) {
-			const auto crop_width =
-			    qMin<qreal>(m_artwork.width(), qreal(width()) * m_artwork.height() / height());
-			const auto crop_height =
-			    qMin<qreal>(m_artwork.height(), qreal(height()) * m_artwork.width() / width());
-			const QRectF source((m_artwork.width() - crop_width) * 0.76,
-			                    (m_artwork.height() - crop_height) * 0.65,
-			                    crop_width, crop_height);
-			painter.drawImage(QRectF(rect()), m_artwork, source);
+QImage ReadArtwork(QImageReader& reader) {
+	const auto size = reader.size();
+	if (!size.isValid() || size.width() > 8192 || size.height() > 8192 ||
+	    qint64(size.width()) * size.height() > 32 * 1024 * 1024) {
+		return {};
+	}
+	reader.setAutoTransform(true);
+	reader.setScaledSize(size.boundedTo(ArtworkPreviewSize) == size
+	                         ? size
+	                         : size.scaled(ArtworkPreviewSize, Qt::KeepAspectRatio));
+	return reader.read();
+}
+
+QImage ReadLocalArtwork(const QString& path) {
+	const QFileInfo file(path);
+	if (!file.isFile() || file.size() > qint64(GameContent::MaxImageSize)) {
+		return {};
+	}
+	QImageReader reader(path);
+	return ReadArtwork(reader);
+}
+
+QImage ReadGameArtwork(const QString& base) {
+	for (const auto* relative: {"sce_sys/pic0.png", "sce_sys/icon0.png"}) {
+		auto data = GameContent::ReadFile(base, QString::fromLatin1(relative), GameContent::MaxImageSize);
+		QBuffer buffer(&data);
+		buffer.open(QIODevice::ReadOnly);
+		QImageReader reader(&buffer);
+		if (auto image = ReadArtwork(reader); !image.isNull()) {
+			return image;
 		}
-		QLinearGradient shade(0, 0, width(), 0);
-		shade.setColorAt(0.0, QColor(17, 14, 25, 248));
-		shade.setColorAt(0.37, QColor(17, 14, 25, 223));
-		shade.setColorAt(0.63, QColor(17, 14, 25, 65));
-		shade.setColorAt(1.0, QColor(17, 14, 25, 5));
-		painter.fillRect(rect(), shade);
 	}
-
-private:
-	QImage m_artwork;
-};
+	return {};
+}
 
 } // namespace
 
@@ -130,12 +143,17 @@ public:
 	static void ReadSettings(QSettings& s);
 
 private:
-	void CreateHero();
+	void CreateLaunchPanel();
+	void ChooseArtwork();
+	void UpdateArtwork(const ConfigurationItem* item);
+	void LoadOfficialArtwork();
+	void ShowArtwork(const QImage& image, bool official);
 	void ChooseBenchmarkOutput();
 	static QByteArray g_last_geometry;
 	static bool       g_check_updates_on_startup;
 	static bool       g_close_terminal;
 	static int        g_theme;
+	static QString    g_artwork_path;
 
 	static void ApplyTheme(int theme) {
 		auto scheme = Qt::ColorScheme::Unknown;
@@ -155,6 +173,12 @@ private:
 	TitleSound      m_title_sound;
 	QString         m_interpreter;
 	QLabel*         m_selection = nullptr;
+	QLabel*         m_artwork = nullptr;
+	QString         m_last_artwork_path;
+	QString         m_last_artwork_game;
+	QImage          m_official_artwork;
+	bool            m_artwork_initialized = false;
+	bool            m_official_artwork_requested = false;
 	QPushButton*    m_launch = nullptr;
 	QPushButton*    m_settings = nullptr;
 	QPushButton*    m_benchmark = nullptr;
@@ -166,6 +190,7 @@ QByteArray MainDialogPrivate::g_last_geometry;
 bool       MainDialogPrivate::g_check_updates_on_startup = true;
 bool       MainDialogPrivate::g_close_terminal           = false;
 int        MainDialogPrivate::g_theme                    = 3;
+QString    MainDialogPrivate::g_artwork_path;
 
 MainDialog::MainDialog(QWidget* parent): QDialog(parent), m_p(new MainDialogPrivate(this)) {
 	m_p->Setup(this);
@@ -181,13 +206,13 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
 	m_ui->widget->SetControllerPreview(&m_controller_preview);
 
 	m_main_dialog = main_dialog;
-	CreateHero();
+	CreateLaunchPanel();
 	m_update_checker = new UpdateChecker(main_dialog);
 	m_ui->check_updates_on_startup->setChecked(g_check_updates_on_startup);
 	m_ui->close_terminal->setChecked(g_close_terminal);
 	m_ui->theme_combo->setCurrentIndex(g_theme);
 	ApplyTheme(g_theme);
-	m_main_dialog->setProperty("gtaCoast", g_theme == 3);
+	m_main_dialog->setProperty("graphiteTheme", g_theme == 3);
 	m_ui->label_Interpreter->hide();
 	m_ui->label_settings_file->hide();
 	m_ui->check_updates_link->setVisible(UpdateChecker::IsSupported());
@@ -231,7 +256,7 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
 	connect(m_ui->theme_combo, &QComboBox::currentIndexChanged, this, [this](int index) {
 		g_theme = index;
 		ApplyTheme(index);
-		m_main_dialog->setProperty("gtaCoast", index == 3);
+		m_main_dialog->setProperty("graphiteTheme", index == 3);
 		m_main_dialog->style()->unpolish(m_main_dialog);
 		m_main_dialog->style()->polish(m_main_dialog);
 		m_main_dialog->update();
@@ -249,36 +274,59 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
 	Update();
 }
 
-void MainDialogPrivate::CreateHero() {
-	auto* hero = new CoastalHero(m_main_dialog);
-	m_ui->verticalLayout_5->insertWidget(0, hero);
+void MainDialogPrivate::CreateLaunchPanel() {
+	auto* panel = new QFrame(m_main_dialog);
+	panel->setObjectName(QStringLiteral("launchPanel"));
+	m_ui->verticalLayout_5->insertWidget(0, panel);
 	m_ui->verticalLayout_5->setSpacing(10);
-	auto* stack = new QVBoxLayout(hero);
-	stack->setContentsMargins(27, 20, 22, 19);
-	stack->setSpacing(5);
+	auto* row = new QHBoxLayout(panel);
+	row->setContentsMargins(18, 14, 14, 14);
+	row->setSpacing(16);
+	auto* stack = new QVBoxLayout;
+	stack->setSpacing(7);
+	row->addLayout(stack, 1);
 
-	auto* heading = new QLabel(tr("KytyPs5 GTA VI"), hero);
-	heading->setObjectName(QStringLiteral("coastalHeading"));
-	stack->addWidget(heading, 0, Qt::AlignLeft);
-	auto* status = new QLabel(tr("GTA VI compatibility is untested"), hero);
-	status->setObjectName(QStringLiteral("coastalStatus"));
+	auto* top = new QHBoxLayout;
+	auto* heading = new QLabel(tr("KytyPs5 GTA VI"), panel);
+	heading->setObjectName(QStringLiteral("launchHeading"));
+	top->addWidget(heading);
+	top->addStretch();
+	auto* artwork = new QToolButton(panel);
+	artwork->setText(tr("Artwork"));
+	artwork->setPopupMode(QToolButton::InstantPopup);
+	auto* menu = new QMenu(artwork);
+	menu->addAction(tr("Choose local image…"), this, &MainDialogPrivate::ChooseArtwork);
+	menu->addAction(tr("Use artwork from game"), this, [this] {
+		g_artwork_path.clear();
+		m_ui->widget->WriteSettings();
+		UpdateArtwork(m_ui->widget->GetSelectedItem());
+	});
+	menu->addSeparator();
+	menu->addAction(tr("Official Rockstar artwork"), this, [] {
+		QDesktopServices::openUrl(
+		    QUrl(QStringLiteral("https://www.rockstargames.com/VI/media/artwork-wallpapers")));
+	});
+	artwork->setMenu(menu);
+	top->addWidget(artwork);
+	stack->addLayout(top);
+
+	auto* status = new QLabel(tr("GTA VI compatibility is untested"), panel);
+	status->setObjectName(QStringLiteral("launchStatus"));
 	stack->addWidget(status, 0, Qt::AlignLeft);
-	stack->addStretch();
 
-	m_selection = new QLabel(hero);
-	m_selection->setObjectName(QStringLiteral("coastalSelection"));
+	m_selection = new QLabel(panel);
+	m_selection->setObjectName(QStringLiteral("launchSelection"));
 	m_selection->setTextFormat(Qt::PlainText);
 	m_selection->setWordWrap(true);
-	m_selection->setMaximumWidth(430);
-	stack->addWidget(m_selection, 0, Qt::AlignLeft);
+	stack->addWidget(m_selection);
 
-	auto make_button = [hero](const QString& label) {
-		auto* button = new QPushButton(label, hero);
+	auto make_button = [panel](const QString& label) {
+		auto* button = new QPushButton(label, panel);
 		button->setAutoDefault(false);
 		return button;
 	};
 	m_launch = make_button(tr("Launch selected"));
-	m_launch->setObjectName(QStringLiteral("coastalLaunch"));
+	m_launch->setObjectName(QStringLiteral("launchPrimary"));
 	m_settings = make_button(tr("Game settings"));
 	m_benchmark = make_button(tr("Benchmark"));
 	m_benchmark->setToolTip(tr("Capture frame timing and resource counters for up to 120 seconds"));
@@ -292,11 +340,107 @@ void MainDialogPrivate::CreateHero() {
 	actions->addStretch();
 	stack->addLayout(actions);
 
+	m_artwork = new QLabel(panel);
+	m_artwork->setFixedSize(ArtworkPreviewSize);
+	m_artwork->setAlignment(Qt::AlignCenter);
+	m_artwork->setAccessibleName(tr("Game artwork"));
+	m_artwork->hide();
+	row->addWidget(m_artwork, 0, Qt::AlignVCenter);
+
 	connect(m_launch, &QPushButton::clicked, this, [this] { Run({}); });
 	connect(m_settings, &QPushButton::clicked, m_ui->widget,
 	        &ConfigurationListWidget::OpenSelectedGameSettings);
 	connect(folders, &QPushButton::clicked, m_ui->widget, &ConfigurationListWidget::AddGameFolder);
 	connect(m_benchmark, &QPushButton::clicked, this, &MainDialogPrivate::ChooseBenchmarkOutput);
+}
+
+void MainDialogPrivate::ChooseArtwork() {
+	const auto path = QFileDialog::getOpenFileName(
+	    m_main_dialog, tr("Choose artwork"), g_artwork_path,
+	    tr("Images (*.jpg *.jpeg *.png *.webp)"));
+	if (path.isEmpty()) {
+		return;
+	}
+	if (ReadLocalArtwork(path).isNull()) {
+		QMessageBox::warning(m_main_dialog, tr("Artwork"), tr("This image could not be opened."));
+		return;
+	}
+	g_artwork_path = path;
+	m_last_artwork_path.clear();
+	m_ui->widget->WriteSettings();
+	UpdateArtwork(m_ui->widget->GetSelectedItem());
+}
+
+void MainDialogPrivate::UpdateArtwork(const ConfigurationItem* item) {
+	const auto game = item != nullptr && item->GetInfo().IsGtaVi() ? item->GetInfo().basedir : QString();
+	if (m_artwork_initialized && m_last_artwork_path == g_artwork_path &&
+	    m_last_artwork_game == game) {
+		return;
+	}
+	m_artwork_initialized = true;
+	m_last_artwork_path = g_artwork_path;
+	m_last_artwork_game = game;
+	auto image = g_artwork_path.isEmpty() ? QImage() : ReadLocalArtwork(g_artwork_path);
+	if (image.isNull() && !game.isEmpty()) {
+		image = ReadGameArtwork(game);
+	}
+	if (!image.isNull()) {
+		ShowArtwork(image, false);
+		return;
+	}
+	ShowArtwork(m_official_artwork, true);
+	if (m_official_artwork.isNull() &&
+	    !QCoreApplication::arguments().contains(QStringLiteral("--local"))) {
+		LoadOfficialArtwork();
+	}
+}
+
+void MainDialogPrivate::ShowArtwork(const QImage& image, bool official) {
+	m_artwork->setPixmap(QPixmap::fromImage(image));
+	const auto name = official ? tr("Official GTA VI cover art by Rockstar Games")
+	                           : tr("Local game artwork");
+	m_artwork->setAccessibleName(name);
+	m_artwork->setToolTip(name);
+	m_artwork->setVisible(!image.isNull());
+}
+
+void MainDialogPrivate::LoadOfficialArtwork() {
+	if (m_official_artwork_requested) {
+		return;
+	}
+	m_official_artwork_requested = true;
+	auto* network = new QNetworkAccessManager(this);
+	QNetworkRequest request {QUrl(QString::fromLatin1(OfficialArtwork))};
+	request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
+	request.setTransferTimeout(8000);
+	auto* reply = network->get(request);
+	reply->setReadBufferSize(64 * 1024);
+	auto bytes = std::make_shared<QByteArray>();
+	connect(reply, &QIODevice::readyRead, this, [reply, bytes] {
+		bytes->append(reply->read(MaxOfficialArtworkBytes - bytes->size() + 1));
+		if (bytes->size() > MaxOfficialArtworkBytes) {
+			reply->abort();
+		}
+	});
+	connect(reply, &QNetworkReply::finished, this, [this, network, reply, bytes] {
+		network->deleteLater();
+		if (reply->error() != QNetworkReply::NoError ||
+		    reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() != 200 ||
+		    bytes->size() > MaxOfficialArtworkBytes) {
+			return;
+		}
+		bytes->append(reply->read(MaxOfficialArtworkBytes - bytes->size() + 1));
+		if (bytes->size() > MaxOfficialArtworkBytes) {
+			return;
+		}
+		QBuffer buffer(bytes.get());
+		buffer.open(QIODevice::ReadOnly);
+		QImageReader reader(&buffer, "jpeg");
+		m_official_artwork = ReadArtwork(reader);
+		if (m_artwork->isHidden() && !m_official_artwork.isNull()) {
+			ShowArtwork(m_official_artwork, true);
+		}
+	});
 }
 
 void MainDialogPrivate::ChooseBenchmarkOutput() {
@@ -643,6 +787,7 @@ void MainDialogPrivate::WriteSettings(QSettings& s) {
 	s.setValue(SETTINGS_CHECK_UPDATES, g_check_updates_on_startup);
 	s.setValue(SETTINGS_CLOSE_TERMINAL, g_close_terminal);
 	s.setValue(SETTINGS_THEME, g_theme);
+	s.setValue(SETTINGS_ARTWORK, g_artwork_path);
 
 	s.endGroup();
 }
@@ -654,6 +799,7 @@ void MainDialogPrivate::ReadSettings(QSettings& s) {
 	g_check_updates_on_startup = s.value(SETTINGS_CHECK_UPDATES, true).toBool();
 	g_close_terminal           = s.value(SETTINGS_CLOSE_TERMINAL, false).toBool();
 	g_theme                    = s.value(SETTINGS_THEME, 3).toInt();
+	g_artwork_path             = s.value(SETTINGS_ARTWORK).toString();
 	if (g_theme < 0 || g_theme > 3) {
 		g_theme = 3;
 	}
@@ -662,7 +808,8 @@ void MainDialogPrivate::ReadSettings(QSettings& s) {
 }
 
 void MainDialogPrivate::Run(const QString& activity, const QString& benchmark_output) {
-	if (!m_launch->isEnabled() || m_update_checker->IsInstalling()) {
+	if (!m_launch->isEnabled() || m_update_checker->IsInstalling() ||
+	    (!benchmark_output.isEmpty() && m_running_games > 0)) {
 		return;
 	}
 	QPointer<ConfigurationItem> item = m_ui->widget->GetSelectedItem();
@@ -720,7 +867,7 @@ void MainDialogPrivate::Update() {
 
 	m_ui->widget->SetRunEnabled(run_enabled);
 	m_launch->setEnabled(run_enabled);
-	m_benchmark->setEnabled(run_enabled);
+	m_benchmark->setEnabled(run_enabled && m_running_games == 0);
 	m_settings->setEnabled(!m_update_checker->IsInstalling() &&
 	                       (item == nullptr || !item->IsRunning()));
 	m_settings->setText(item == nullptr ? tr("Settings") : tr("Game settings"));
@@ -740,6 +887,7 @@ void MainDialogPrivate::Update() {
 		                                    EnumToText(effective->present_mode)));
 		m_selection->setToolTip(info.basedir);
 	}
+	UpdateArtwork(item);
 	m_update_checker->SetGameRunning(m_running_games > 0);
 	if (m_running_games > 0) {
 		m_controller_preview.SetSuspended(true);

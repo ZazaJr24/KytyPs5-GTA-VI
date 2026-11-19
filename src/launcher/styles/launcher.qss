@@ -119,66 +119,54 @@ QLabel#game_status_indicator {
     border-radius: 6px;
 }
 
-/* Coastal launcher */
-QDialog#MainDialog[gtaCoast="true"] {
-    background: #161321;
-    color: #f7edf6;
+/* Compact launcher header */
+QDialog#MainDialog[graphiteTheme="true"] {
+    background: #17191d;
+    color: #eff1f4;
 }
 
-QWidget#coastalHero QLabel {
-    background: transparent;
-    color: #fdf2fa;
+QFrame#launchPanel {
+    border: 1px solid palette(mid);
+    border-radius: 9px;
+    background: palette(base);
 }
 
-QLabel#coastalHeading {
-    font-size: 43px;
-    font-weight: 800;
+QLabel#launchHeading {
+    font-size: 28px;
+    font-weight: 700;
 }
 
-QLabel#coastalStatus {
+QLabel#launchStatus {
+    color: palette(placeholder-text);
     font-size: 12px;
-    font-weight: 600;
-    color: #ffb7a5;
 }
 
-QLabel#coastalSelection {
+QLabel#launchSelection {
     font-size: 13px;
     font-weight: 600;
-    color: #fff4f5;
-    padding-bottom: 4px;
 }
 
-QWidget#coastalHero QPushButton {
+QFrame#launchPanel QPushButton {
     min-height: 26px;
-    border: 1px solid #84718d;
-    border-radius: 8px;
-    background: #2e253b;
-    color: #fff3fa;
-    font-weight: 600;
-    padding: 4px 12px;
+    border: 1px solid palette(mid);
+    border-radius: 5px;
+    background: palette(button);
+    color: palette(button-text);
+    padding: 3px 10px;
 }
 
-QWidget#coastalHero QPushButton#coastalLaunch {
-    background: #ffad93;
-    border-color: #ffad93;
-    color: #241320;
-    font-weight: 800;
+QFrame#launchPanel QPushButton#launchPrimary {
+    background: palette(highlight);
+    border-color: palette(highlight);
+    color: palette(highlighted-text);
+    font-weight: 700;
 }
 
-QWidget#coastalHero QPushButton:hover {
-    background: #4a3652;
+QFrame#launchPanel QPushButton:focus {
+    border-color: palette(highlight);
 }
 
-QWidget#coastalHero QPushButton#coastalLaunch:hover {
-    background: #ffd1b6;
-}
-
-QWidget#coastalHero QPushButton:focus {
-    border-color: #b1f4e2;
-}
-
-QWidget#coastalHero QPushButton:disabled {
-    background: #2b2534;
-    border-color: #55475e;
-    color: #bbabbf;
+QFrame#launchPanel QPushButton:disabled {
+    background: palette(base);
+    color: palette(placeholder-text);
 }

@@ -60,8 +60,10 @@ GTA VI status is **untested**. The compatibility milestones are first guest fram
 
 ## Launcher
 
-The Coastal launcher highlights GTA VI in the game library when its title metadata matches.
+The launcher highlights GTA VI in the game library when its title metadata matches.
 Use **Add game folder** to add existing directories, then **Game settings** for Vulkan device,
 window resolution, presentation mode, shader cache, pipeline warmup and ZArchive read-ahead.
 The **Benchmark** button captures up to 120 seconds for the selected game and writes a new
-JSON file. The coastal banner is original generated artwork.
+JSON file. The compact preview uses local GTA VI title artwork when available and otherwise
+loads the official cover from Rockstar Games. The Artwork menu can select a local wallpaper
+and links to the official gallery. Running the launcher with `--local` keeps artwork offline.
