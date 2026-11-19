@@ -65,13 +65,13 @@ jobs:
           name: KytyPs5-GTA-VI-Windows
           path: _Build/windows/install/
           if-no-files-found: error
-      - name: Build Windows regression tests
+      - name: Build Windows Vulkan and archive tests
         shell: pwsh
         env:
           SCCACHE_GHA_ENABLED: 'true'
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          cmake --build _Build/windows --target kyty_tests --parallel 3
+          cmake --build _Build/windows --target shader_recompiler_compute_tests archive_file_tests --parallel 3
       - uses: actions/upload-artifact@v4
         with:
           name: KytyPs5-GTA-VI-Windows-Vulkan-tests
@@ -82,7 +82,10 @@ jobs:
           if-no-files-found: error
       - name: Run Windows host regression tests
         shell: pwsh
-        run: ctest --test-dir _Build/windows --output-on-failure --timeout 480 -LE hardware_vulkan
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          cmake --build _Build/windows --target kyty_tests --parallel 3
+          ctest --test-dir _Build/windows --output-on-failure --timeout 480 -LE hardware_vulkan
 
   linux:
     runs-on: ubuntu-24.04
