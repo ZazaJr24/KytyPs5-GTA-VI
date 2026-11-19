@@ -769,29 +769,23 @@ if(BUILD_TESTING)
 	add_test(NAME rtc COMMAND $<TARGET_FILE:rtc_tests>)
 	add_test(NAME playgo COMMAND $<TARGET_FILE:playgo_tests>)
 	add_test(NAME vr_tracker2 COMMAND $<TARGET_FILE:vr_tracker2_tests>)
-	add_test(NAME shader_recompiler_compute COMMAND $<TARGET_FILE:shader_recompiler_compute_tests>)
-	add_test(NAME shader_cache_warmup
-	         COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --shader-cache-only)
-	add_test(NAME shader_recompiler_tessellation
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --tessellation-only)
-	add_test(NAME shader_recompiler_float_min_max
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --float-min-max-only)
-	add_test(NAME shader_recompiler_relaxed_float
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --relaxed-float-only)
-	add_test(NAME shader_recompiler_vop3_conversions
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --vop3-conversions-only)
-	add_test(NAME shader_recompiler_quadmask
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --quadmask-only)
-	add_test(NAME shader_recompiler_integer16_ternary
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --integer16-ternary-only)
-	add_test(NAME shader_recompiler_mad_u16
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --mad-u16-only)
-	add_test(NAME shader_recompiler_mul_hi24
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --mul-hi24-only)
-	add_test(NAME shader_recompiler_alignbyte
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --alignbyte-only)
-	add_test(NAME graphics_pipeline_rasterization
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --polygon-mode-only)
+	function(add_kyty_vulkan_test name)
+		add_test(NAME ${name} COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> ${ARGN})
+		set_tests_properties(${name} PROPERTIES LABELS hardware_vulkan)
+	endfunction()
+
+	add_kyty_vulkan_test(shader_recompiler_compute)
+	add_kyty_vulkan_test(shader_cache_warmup --shader-cache-only)
+	add_kyty_vulkan_test(shader_recompiler_tessellation --tessellation-only)
+	add_kyty_vulkan_test(shader_recompiler_float_min_max --float-min-max-only)
+	add_kyty_vulkan_test(shader_recompiler_relaxed_float --relaxed-float-only)
+	add_kyty_vulkan_test(shader_recompiler_vop3_conversions --vop3-conversions-only)
+	add_kyty_vulkan_test(shader_recompiler_quadmask --quadmask-only)
+	add_kyty_vulkan_test(shader_recompiler_integer16_ternary --integer16-ternary-only)
+	add_kyty_vulkan_test(shader_recompiler_mad_u16 --mad-u16-only)
+	add_kyty_vulkan_test(shader_recompiler_mul_hi24 --mul-hi24-only)
+	add_kyty_vulkan_test(shader_recompiler_alignbyte --alignbyte-only)
+	add_kyty_vulkan_test(graphics_pipeline_rasterization --polygon-mode-only)
 	add_test(NAME graphics_draw_offsets
 		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --draw-offset-only)
 	add_test(NAME virtual_memory_allocation
@@ -799,59 +793,40 @@ if(BUILD_TESTING)
 	add_test(NAME trinity_mode
 		COMMAND $<TARGET_FILE:virtual_memory_allocation_tests> --trinity-only)
 	add_test(NAME psml COMMAND $<TARGET_FILE:psml_tests>)
-	add_test(NAME pssr COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --pssr-only)
+	add_kyty_vulkan_test(pssr --pssr-only)
 	add_test(NAME guest_red_zone_patcher
 		COMMAND $<TARGET_FILE:virtual_memory_allocation_tests> --red-zone-patcher-only)
-	add_test(NAME command_scheduler_timeline
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --scheduler-only)
-	add_test(NAME stream_buffer_ring
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --stream-buffer-only)
-	add_test(NAME gpu_command_lane
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --gpu-command-lane-only)
+	add_kyty_vulkan_test(command_scheduler_timeline --scheduler-only)
+	add_kyty_vulkan_test(stream_buffer_ring --stream-buffer-only)
+	add_kyty_vulkan_test(gpu_command_lane --gpu-command-lane-only)
 	add_test(NAME pm4_flip
 		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --flip-only)
 	add_test(NAME video_out_flip_rate
 		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --flip-rate-only)
-	add_test(NAME video_out_hdr10_to_sdr
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --video-out-only)
-	add_test(NAME depth_bits
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --depth-bits-only)
-	add_test(NAME srgb_texture
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --srgb-texture-only)
+	add_kyty_vulkan_test(video_out_hdr10_to_sdr --video-out-only)
+	add_kyty_vulkan_test(depth_bits --depth-bits-only)
+	add_kyty_vulkan_test(srgb_texture --srgb-texture-only)
 	add_test(NAME device_creation
 		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --device-creation-only)
-	add_test(NAME msaa_storage
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --msaa-storage-only)
-	add_test(NAME pm4_context_state
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --context-state-only)
-	add_test(NAME gpu_tiler
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --gpu-tiler-only)
+	add_kyty_vulkan_test(msaa_storage --msaa-storage-only)
+	add_kyty_vulkan_test(pm4_context_state --context-state-only)
+	add_kyty_vulkan_test(gpu_tiler --gpu-tiler-only)
 	add_test(NAME image_transfer_layout
 		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --image-layout-only)
 
-	add_test(NAME texture_cache_layered_image
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --layered-image-only)
-	add_test(NAME host_image_allocation
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --host-image-allocation-only)
-	add_test(NAME texture_cache_image_views
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --image-view-cache-only)
-	add_test(NAME texture_cache_storage_sampled
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --storage-sampled-only)
+	add_kyty_vulkan_test(texture_cache_layered_image --layered-image-only)
+	add_kyty_vulkan_test(host_image_allocation --host-image-allocation-only)
+	add_kyty_vulkan_test(texture_cache_image_views --image-view-cache-only)
+	add_kyty_vulkan_test(texture_cache_storage_sampled --storage-sampled-only)
 	add_test(NAME texture_cache_depth_readback
 		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --depth-readback-only)
-	add_test(NAME compute_meta_clear_classification
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --compute-meta-clear-only)
-	add_test(NAME buffer_cache_dirty_gc
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --buffer-cache-gc-only)
-	add_test(NAME color_render_target_1d
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --rt1d-only)
+	add_kyty_vulkan_test(compute_meta_clear_classification --compute-meta-clear-only)
+	add_kyty_vulkan_test(buffer_cache_dirty_gc --buffer-cache-gc-only)
+	add_kyty_vulkan_test(color_render_target_1d --rt1d-only)
 
-	add_test(NAME texture_cache_image_overlap
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --image-overlap-only)
-	add_test(NAME texture_cache_htile_clear
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --htile-clear-only)
-	add_test(NAME buffer_cache_ranges
-		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --buffer-cache-range-only)
+	add_kyty_vulkan_test(texture_cache_image_overlap --image-overlap-only)
+	add_kyty_vulkan_test(texture_cache_htile_clear --htile-clear-only)
+	add_kyty_vulkan_test(buffer_cache_ranges --buffer-cache-range-only)
 
 	add_custom_target(kyty_tests DEPENDS
 		ime_dialog_tests

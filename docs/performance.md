@@ -30,6 +30,14 @@ worker sees adjacent requests, it can serve subsequent reads from one 128 KiB wi
 without the switch. The worker uses a weak reader reference so closing the archive still releases
 the underlying file.
 
+## Automated validation
+
+The Windows and Linux jobs build the emulator and regression targets. GitHub-hosted CI runs the
+host tests. The Vulkan cases need a device with the full feature set used by the renderer test
+harness. On a suitable Windows machine run `shader_recompiler_compute_tests.exe --shader-cache-only`
+from the extracted Vulkan test artifact. With a local build, `ctest -L hardware_vulkan` runs the
+entire renderer suite.
+
 ## Compare
 
 Use the same benchmark instrumentation, scenario, game build, hardware, graphics driver, resolution and inputs for both revisions. Run five cold and five warm trials per revision. Record the save or replay and the start/stop conditions so someone else can repeat the scenario. Compare the medians of each per-run metric. Reject candidate changes with visual, stability or audio regressions. The default-enable gate is a 10% improvement in the target metric and at most 5% regression across the other reference scenarios.
