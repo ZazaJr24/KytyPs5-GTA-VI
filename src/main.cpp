@@ -94,6 +94,7 @@ static void PrintUsage() {
 	::printf("  --no-trophy-notifications            Disable trophy unlock toasts and their sound.\n");
 	::printf(
 	    "  --trophy-duration <seconds>          Trophy toast duration, 5-10. Default: 6.\n");
+	::printf("  --archive-read-ahead                 Prefetch small sequential ZArchive reads.\n");
 	::printf("  --benchmark-output <json>            Export benchmark data to a new file.\n");
 	::printf("  --benchmark-seconds <num>            Exit after this many seconds from benchmark start.\n");
 	::printf("  --benchmark-cache-state <value>      Label the isolated run as cold or warm.\n");
@@ -244,6 +245,10 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 			continue;
 		}
 
+		if (arg == "--archive-read-ahead") {
+			options.archive_read_ahead = true;
+			continue;
+		}
 		if (const auto* flag = std::ranges::find(FLAGS, arg, &Flag::name); flag != std::end(FLAGS)) {
 			options.config.*flag->field = flag->value;
 			continue;

@@ -18,6 +18,7 @@ struct RunOptions {
 	std::filesystem::path                benchmark_output;
 	std::string                          benchmark_cache_state;
 	uint32_t                             benchmark_seconds = 0;
+	bool                                 archive_read_ahead = false;
 	std::filesystem::path                addcont_dir;
 	std::vector<Common::AddContentEntry> addcont;
 };

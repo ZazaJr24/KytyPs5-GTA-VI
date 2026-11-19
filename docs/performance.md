@@ -22,8 +22,24 @@ pipelines in first-use order, with at most four workers. Use `0` to defer all Vu
 creation to first use. Shader modules still load from the persistent cache. Compare warm startup
 and P99 together, since deferred creation can move work from boot into gameplay.
 
+## Experimental ZArchive streaming
+
+Add `--archive-read-ahead` for a ZArchive workload with sequences of small reads. Once the
+worker sees adjacent requests, it can serve subsequent reads from one 128 KiB window. Compare
+`archive_backend_reads`, `archive_read_ahead_hits` and frame times against the same archive
+without the switch. The worker uses a weak reader reference so closing the archive still releases
+the underlying file.
+
 ## Compare
 
 Use the same benchmark instrumentation, scenario, game build, hardware, graphics driver, resolution and inputs for both revisions. Run five cold and five warm trials per revision. Record the save or replay and the start/stop conditions so someone else can repeat the scenario. Compare the medians of each per-run metric. Reject candidate changes with visual, stability or audio regressions. The default-enable gate is a 10% improvement in the target metric and at most 5% regression across the other reference scenarios.
+
+The Python runner alternates emulator order and writes every raw capture, emulator log and a
+median comparison to a new directory. Use a fixture that starts at the same point and runs the
+same sequence without live input. If needed, supply a local save fixture with `--seed`.
+
+```powershell
+python tools/benchmark.py --baseline 'D:\Baseline\kyty_emulator.exe' --candidate 'D:\Candidate\kyty_emulator.exe' --game 'D:\Games\ExampleGame' --output '.\comparison' --candidate-arg=--pipeline-warmup-limit --candidate-arg=128
+```
 
 GTA VI status is **untested**. The compatibility milestones are first guest frame, menu, loaded save, interactive gameplay and a repeatable streaming-heavy driving route. Record game serial/version, emulator commit and the first concrete blocker when supported test files become available.

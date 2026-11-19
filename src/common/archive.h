@@ -40,6 +40,8 @@ private:
 [[nodiscard]] std::optional<File::Info>   GetArchiveInfo(const std::filesystem::path& path);
 [[nodiscard]] std::vector<File::DirEntry> GetArchiveDirEntries(const std::filesystem::path& path);
 [[nodiscard]] std::filesystem::path       GetArchiveHostPath(const std::filesystem::path& path);
+void SetArchiveReadAheadEnabled(bool enabled) noexcept;
+
 [[nodiscard]] std::unique_ptr<ArchiveFile> OpenArchiveFile(const std::filesystem::path& path);
 
 // Retain this handle while a mount or metadata scan is active to reuse the index and block cache.

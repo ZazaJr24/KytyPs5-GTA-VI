@@ -52,6 +52,10 @@ enum class Counter {
 	EmulatedInstructions, // Host CPU lacked an instruction the guest used.
 	UnresolvedImportCalls,
 	GuestFileReadBytes,
+	ArchiveBackendReads,
+	ArchiveBackendReadNs,
+	ArchiveReadAheadHits,
+	ArchiveReadAheadBytes,
 	GuestFileWriteBytes,
 	AudioUnderruns,
 	// Overlapping host elapsed timings, including waits.

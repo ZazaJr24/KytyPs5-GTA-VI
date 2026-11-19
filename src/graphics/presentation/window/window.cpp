@@ -866,13 +866,15 @@ Presenter& WindowInit(uint32_t width, uint32_t height) {
 	return presenter;
 }
 
-void WindowRun() {
+bool WindowRun() {
 	KYTY_PROFILER_THREAD("Thread_Window");
 	EXIT_IF(g_window == nullptr);
 
 	g_window->Run();
+	const bool report_ok = Emulator::Benchmark::Finish();
 	Common::LockGuard lock(g_window->render_context->GetMutex());
 	g_window->render_context->GetPipelineCache().Save();
+	return report_ok;
 }
 
 void WindowShutdown() {

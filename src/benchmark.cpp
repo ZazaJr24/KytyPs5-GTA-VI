@@ -90,6 +90,10 @@ Json Counters() {
 	    {"gpu_waits", Get(Counter::GpuWaits)},
 	    {"gpu_wait_ns", Get(Counter::GpuWaitNs)},
 	    {"guest_file_read_bytes", Get(Counter::GuestFileReadBytes)},
+	    {"archive_backend_reads", Get(Counter::ArchiveBackendReads)},
+	    {"archive_backend_read_ns", Get(Counter::ArchiveBackendReadNs)},
+	    {"archive_read_ahead_hits", Get(Counter::ArchiveReadAheadHits)},
+	    {"archive_read_ahead_bytes", Get(Counter::ArchiveReadAheadBytes)},
 	    {"dropped_presents", Get(Counter::DroppedPresents)},
 	    {"flips_rejected", Get(Counter::FlipsRejected)},
 	    {"late_vblanks", Get(Counter::LateVblanks)},
@@ -137,7 +141,7 @@ void Start(const RunOptions& options) {
 	session.intervals.reserve(MaxIntervals);
 	session.metadata = {
 	    {"build", KYTY_BUILD_LABEL},
-	    {"commit", KYTY_GIT_VERSION},
+	    {"commit", KYTY_GIT_REVISION},
 	    {"cpu", Common::GetSystemInfo().ProcessorName},
 	    {"gpu", nullptr},
 	    {"vulkan_driver_version", nullptr},
@@ -149,6 +153,7 @@ void Start(const RunOptions& options) {
 	    {"present_mode", magic_enum::enum_name(options.config.present_mode)},
 	    {"vblank_hz", options.config.vblank_frequency},
 	    {"persistent_shader_cache_enabled", options.config.shader_cache_enabled},
+	    {"archive_read_ahead_enabled", options.archive_read_ahead},
 	    {"pipeline_warmup_limit", OptionalValue(options.config.pipeline_warmup_limit)},
 	    {"cache_state", options.benchmark_cache_state.empty() ? "unspecified" :
 	                                                              options.benchmark_cache_state},
@@ -243,7 +248,7 @@ bool Finish() {
 	             : Json(nullptr)},
 	    {"counters", counters},
 	};
-	return WriteReport(session.output, report.dump(2) + '\n');
+	return WriteReport(session.output, report.dump(2, ' ', false, Json::error_handler_t::replace) + '\n');
 }
 
 } // namespace Emulator::Benchmark

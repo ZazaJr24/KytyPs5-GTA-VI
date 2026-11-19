@@ -9,7 +9,7 @@ namespace Libs::Graphics {
 class Presenter;
 
 [[nodiscard]] Presenter& WindowInit(uint32_t width, uint32_t height);
-void                     WindowRun();
+bool                     WindowRun();
 void                     WindowShutdown();
 
 // Nits of the display showing the game window; the defaults apply when the host reports none.

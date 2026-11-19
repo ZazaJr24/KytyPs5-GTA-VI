@@ -3,6 +3,7 @@
 #include "benchmark.h"
 
 #include "common/abi.h"
+#include "common/archive.h"
 #include "common/assert.h"
 #include "common/emulatorConfig.h"
 #include "common/file.h"
@@ -137,8 +138,7 @@ static void Execute(const std::filesystem::path& game_patch) {
 	std::thread([game_patch] {
 		Common::Singleton<Loader::RuntimeLinker>::Instance()->Execute(game_patch);
 	}).detach();
-	Libs::Graphics::WindowRun();
-	std::quick_exit(Benchmark::Finish() ? 0 : 1);
+	std::quick_exit(Libs::Graphics::WindowRun() ? 0 : 1);
 }
 
 void Run(const RunOptions& options) {
@@ -150,6 +150,7 @@ void Run(const RunOptions& options) {
 		EXIT("ELF is required\n");
 	}
 
+	Common::SetArchiveReadAheadEnabled(options.archive_read_ahead);
 	Benchmark::Start(options);
 	const auto         param_json = options.app0_dir / "sce_sys" / "param.json";
 	Common::Subsystems subsystems(true);

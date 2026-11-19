@@ -723,6 +723,14 @@ if(BUILD_TESTING)
 	add_test(NAME emulator_present_mode_invalid
 	         COMMAND $<TARGET_FILE:kyty_emulator> --help --present-mode Invalid)
 	set_tests_properties(emulator_present_mode_invalid PROPERTIES WILL_FAIL TRUE)
+	add_test(NAME emulator_benchmark_cli
+	         COMMAND $<TARGET_FILE:kyty_emulator> --help --benchmark-output measure.json
+	                 --benchmark-seconds 1 --benchmark-cache-state cold --shader-cache
+	                 --pipeline-warmup-limit 0 --archive-read-ahead)
+	set_tests_properties(emulator_benchmark_cli PROPERTIES PASS_REGULAR_EXPRESSION "--benchmark-output")
+	add_test(NAME emulator_benchmark_missing_output
+	         COMMAND $<TARGET_FILE:kyty_emulator> --help --benchmark-seconds 1)
+	set_tests_properties(emulator_benchmark_missing_output PROPERTIES WILL_FAIL TRUE)
 	add_test(NAME ime_dialog COMMAND $<TARGET_FILE:ime_dialog_tests>)
 	add_test(NAME shader_cfg COMMAND $<TARGET_FILE:shader_cfg_tests>)
 	add_test(NAME scalar_provenance COMMAND $<TARGET_FILE:scalar_provenance_tests>)
@@ -762,6 +770,8 @@ if(BUILD_TESTING)
 	add_test(NAME playgo COMMAND $<TARGET_FILE:playgo_tests>)
 	add_test(NAME vr_tracker2 COMMAND $<TARGET_FILE:vr_tracker2_tests>)
 	add_test(NAME shader_recompiler_compute COMMAND $<TARGET_FILE:shader_recompiler_compute_tests>)
+	add_test(NAME shader_cache_warmup
+	         COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --shader-cache-only)
 	add_test(NAME shader_recompiler_tessellation
 		COMMAND $<TARGET_FILE:shader_recompiler_compute_tests> --tessellation-only)
 	add_test(NAME shader_recompiler_float_min_max

@@ -2,6 +2,7 @@
 #include "common/archive.h"
 #include "common/stringUtils.h"
 #include "ArchiveTestFixture.h"
+#include "common/debugCounters.h"
 
 #include <algorithm>
 #include <array>
@@ -363,6 +364,26 @@ int main() {
   Check(bytes_read == full.size(), "read a multi-chunk member");
   Check(full == payload, "preserve a multi-chunk member");
 
+  Common::SetArchiveReadAheadEnabled(true);
+  Common::DebugCounters::SetBenchmarkEnabled(true);
+  const auto hits_before =
+      Common::DebugCounters::Get(Common::DebugCounters::Counter::ArchiveReadAheadHits);
+  Check(file.Seek(0), "seek to the start for a sequential read-ahead test");
+  std::array<uint8_t, 4096> sequential_data{};
+  for (size_t offset = 0; offset < 256 * 1024; offset += sequential_data.size()) {
+    file.Read(sequential_data.data(), sequential_data.size(), &bytes_read);
+    Check(bytes_read == sequential_data.size() &&
+              std::equal(sequential_data.begin(), sequential_data.end(), payload.begin() + offset),
+          "read-ahead preserves bytes across compressed blocks");
+  }
+  Check(Common::DebugCounters::Get(Common::DebugCounters::Counter::ArchiveReadAheadHits) >
+            hits_before + 32,
+        "sequential reads are served from the read-ahead cache");
+  Check(file.Seek(payload.size() - 4), "seek near EOF with read-ahead enabled");
+  file.Read(sequential_data.data(), sequential_data.size(), &bytes_read);
+  Check(bytes_read == 4 && file.IsEOF(), "read-ahead respects the member end");
+  Common::DebugCounters::SetBenchmarkEnabled(false);
+
   std::atomic_bool concurrent_reads_ok = true;
   std::vector<std::thread> readers;
   for (uint32_t worker = 0; worker < 8; worker++) {
@@ -394,6 +415,7 @@ int main() {
     reader.join();
   }
   Check(concurrent_reads_ok, "read concurrently through independent file handles");
+  Common::SetArchiveReadAheadEnabled(false);
 
 #if !defined(_WIN32) || defined(_GLIBCXX_GCC_GTHR_POSIX_H)
   CheckCancellation(data_path, payload);

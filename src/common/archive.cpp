@@ -1,8 +1,10 @@
 #include "common/archive.h"
 
+#include "common/debugCounters.h"
 #include "common/stringUtils.h"
 
 #include <algorithm>
+#include <atomic>
 #include <condition_variable>
 #include <cstring>
 #include <mutex>
@@ -167,6 +169,8 @@ std::unordered_map<std::filesystem::path, std::weak_ptr<ArchiveReader>> g_reader
 // Guest stacks can be only 64 KiB. Decompress on an ordinary host stack, then copy into guest
 // memory on the caller so GPU-tracked writes use its fault handler. A single worker bounds host
 // threads and avoids duplicating the archive's own block cache. Requests live on waiting callers.
+std::atomic<bool> g_read_ahead_enabled {false};
+
 class ArchiveIoThread {
 public:
 	static ArchiveIoThread& Instance() {
@@ -176,8 +180,9 @@ public:
 		return *instance;
 	}
 
-	uint64_t Read(ArchiveReader& reader, uint64_t id, uint64_t offset, uint32_t size, void* data) {
-		Request          request {reader, id, offset, size, data};
+	uint64_t Read(const std::shared_ptr<ArchiveReader>& reader, ArchiveReader::Entry entry,
+	              uint64_t offset, uint32_t size, void* data) {
+		Request          request {reader, entry, offset, size, data};
 		std::unique_lock lock(m_mutex);
 		if (m_last != nullptr) {
 			m_last->next = &request;
@@ -194,8 +199,8 @@ public:
 
 private:
 	struct Request {
-		ArchiveReader&          reader;
-		uint64_t                id;
+		const std::shared_ptr<ArchiveReader>& reader;
+		ArchiveReader::Entry    entry;
 		uint64_t                offset;
 		uint32_t                size;
 		void*                   data;
@@ -204,6 +209,60 @@ private:
 		bool                    done   = false;
 		std::condition_variable ready {};
 	};
+
+	uint64_t BackendRead(const Request& request, uint32_t size, void* data) {
+		using DebugCounters::Counter;
+		DebugCounters::ScopedTimer timer(Counter::ArchiveBackendReads, Counter::ArchiveBackendReadNs);
+		return request.reader->Read(request.entry.id, request.offset, size, data);
+	}
+
+	uint64_t ReadRequest(const Request& request) {
+		using DebugCounters::Counter;
+		constexpr uint32_t ReadAheadSize = 128 * 1024;
+		if (!g_read_ahead_enabled.load(std::memory_order_relaxed) ||
+		    request.size >= ReadAheadSize) {
+			m_last_reader.reset();
+			return BackendRead(request, request.size, request.data);
+		}
+
+		const bool sequential = m_last_reader.lock() == request.reader &&
+		                        m_last_entry == request.entry.id && m_last_end == request.offset;
+		m_last_reader = request.reader;
+		m_last_entry = request.entry.id;
+		m_last_end = request.offset + request.size;
+
+		if (m_cached_reader.lock() == request.reader && m_cached_entry == request.entry.id &&
+		    request.offset >= m_cached_begin) {
+			const auto offset = request.offset - m_cached_begin;
+			if (offset <= m_cached_size && request.size <= m_cached_size - offset) {
+				std::memcpy(request.data, m_read_ahead.data() + offset, request.size);
+				DebugCounters::Add(Counter::ArchiveReadAheadHits);
+				return request.size;
+			}
+		}
+		if (!sequential) {
+			return BackendRead(request, request.size, request.data);
+		}
+
+		const auto available = request.entry.size - request.offset;
+		const auto prefetch_size = static_cast<uint32_t>(std::min<uint64_t>(available, ReadAheadSize));
+		if (prefetch_size <= request.size) {
+			return BackendRead(request, request.size, request.data);
+		}
+		m_read_ahead.resize(prefetch_size);
+		m_cached_reader.reset();
+		const auto result = BackendRead(request, prefetch_size, m_read_ahead.data());
+		if (result < request.size || result > prefetch_size) {
+			return BackendRead(request, request.size, request.data);
+		}
+		m_cached_reader = request.reader;
+		m_cached_entry = request.entry.id;
+		m_cached_begin = request.offset;
+		m_cached_size = result;
+		DebugCounters::Add(Counter::ArchiveReadAheadBytes, result - request.size);
+		std::memcpy(request.data, m_read_ahead.data(), request.size);
+		return request.size;
+	}
 
 	ArchiveIoThread() {
 		std::thread([this] { Loop(); }).detach();
@@ -221,8 +280,7 @@ private:
 					m_last = nullptr;
 				}
 			}
-			const auto result =
-			    request->reader.Read(request->id, request->offset, request->size, request->data);
+			const auto result = ReadRequest(*request);
 			{
 				std::lock_guard lock(m_mutex);
 				request->result = result;
@@ -238,9 +296,23 @@ private:
 	std::condition_variable m_wake;
 	Request*                m_first = nullptr;
 	Request*                m_last  = nullptr;
+
+	// Worker-owned byte cache. Weak references do not keep files open after the final close.
+	std::weak_ptr<ArchiveReader> m_last_reader;
+	uint64_t m_last_entry = 0;
+	uint64_t m_last_end = 0;
+	std::weak_ptr<ArchiveReader> m_cached_reader;
+	uint64_t m_cached_entry = 0;
+	uint64_t m_cached_begin = 0;
+	uint64_t m_cached_size = 0;
+	std::vector<uint8_t> m_read_ahead;
 };
 
 } // namespace
+
+void SetArchiveReadAheadEnabled(bool enabled) noexcept {
+	g_read_ahead_enabled.store(enabled, std::memory_order_relaxed);
+}
 
 struct ArchiveFile::Private {
 	std::shared_ptr<ArchiveReader> reader;
@@ -280,7 +352,7 @@ void ArchiveFile::Read(void* data, uint32_t size, uint32_t* bytes_read) {
 		}
 		while (read < requested) {
 			const auto step = std::min(chunk_size, requested - read);
-			const auto got  = ArchiveIoThread::Instance().Read(*m_p->reader, m_p->entry.id,
+			const auto got  = ArchiveIoThread::Instance().Read(m_p->reader, m_p->entry,
 			                                                   m_p->position, step, chunk.data());
 			if (got == 0 || got > step) {
 				break;
