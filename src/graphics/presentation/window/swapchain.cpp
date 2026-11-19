@@ -1,3 +1,4 @@
+#include "benchmark.h"
 #include "common/assert.h"
 #include "common/common.h"
 #include "common/debugCounters.h"
@@ -323,7 +324,7 @@ struct Presenter::Impl {
 		cache.UpdateImage(image_id);
 		return image;
 	}
-	void Present();
+	void Present(bool new_main_frame = false);
 
 	RenderContext&        renderer;
 	WindowContext&        window;
@@ -1016,6 +1017,7 @@ void Presenter::Present(Frame& frame) {
 
 void Presenter::Present(std::span<const Layer> layers) {
 	Common::LockGuard lock(m_impl->present_mutex);
+	bool new_main_frame = false;
 	for (const auto& layer: layers) {
 		EXIT_IF(layer.bus < 0 || layer.bus >= static_cast<int>(m_impl->layers.size()));
 		auto& previous = m_impl->layers[layer.bus];
@@ -1023,8 +1025,9 @@ void Presenter::Present(std::span<const Layer> layers) {
 			m_impl->frames.Release(previous.frame);
 		}
 		previous = layer;
+		new_main_frame |= layer.bus == 0 && layer.frame != nullptr && !layer.frame->blank;
 	}
-	m_impl->Present();
+	m_impl->Present(new_main_frame);
 }
 
 void Presenter::ClearLayer(int bus) {
@@ -1039,7 +1042,7 @@ void Presenter::ClearLayer(int bus) {
 	}
 }
 
-void Presenter::Impl::Present() {
+void Presenter::Impl::Present(bool new_main_frame) {
 	KYTY_PROFILER_FUNCTION();
 	using Common::DebugCounters::Counter;
 	using Common::DebugCounters::ScopedTimer;
@@ -1090,6 +1093,10 @@ void Presenter::Impl::Present() {
 
 		presented_overlay_revision.store(overlay_visual.revision, std::memory_order_release);
 		window.loop.presented_frames.fetch_add(1, std::memory_order_relaxed);
+		if (new_main_frame && main_frame != nullptr) {
+			Emulator::Benchmark::RecordPresent(window.graphic_ctx, main_frame->image.extent.width,
+			                                  main_frame->image.extent.height);
+		}
 		return;
 	}
 	LOGF("Vulkan presentation retry exhausted; dropping frame\n");

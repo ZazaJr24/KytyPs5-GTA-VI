@@ -1,5 +1,6 @@
 ﻿#include "graphics/presentation/window.h"
 
+#include "benchmark.h"
 #include "common/assert.h"
 #include "common/common.h"
 #include "common/emulatorConfig.h"
@@ -760,7 +761,7 @@ void WindowContext::Run() {
 	auto               title_time        = SDL_GetTicks();
 	auto               title_frames      = loop.presented_frames.load(std::memory_order_relaxed);
 
-	while (!loop.need_exit) {
+	while (!loop.need_exit && !Emulator::Benchmark::DeadlineReached()) {
 		// Refresh the title on the main thread without making presentation wait for it.
 		const auto now     = SDL_GetTicks();
 		const auto elapsed = now - title_time;
@@ -773,7 +774,8 @@ void WindowContext::Run() {
 			title_time   = now;
 			title_frames = frames;
 		}
-		const auto wait_ms = static_cast<int>(title_interval_ms - (now - title_time));
+		const auto title_wait = static_cast<int>(title_interval_ms - (now - title_time));
+		const auto wait_ms = Emulator::Benchmark::LimitWaitMs(title_wait);
 		if (!HostInputWaitEvent(&loop.event, wait_ms)) {
 			continue;
 		}

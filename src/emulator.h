@@ -5,6 +5,7 @@
 #include "common/emulatorConfig.h"
 #include "common/stringUtils.h"
 
+#include <cstdint>
 #include <filesystem>
 
 namespace Emulator {
@@ -14,6 +15,9 @@ struct RunOptions {
 	std::filesystem::path                app0_dir;
 	std::filesystem::path                elf;
 	std::filesystem::path                game_patch;
+	std::filesystem::path                benchmark_output;
+	std::string                          benchmark_cache_state;
+	uint32_t                             benchmark_seconds = 0;
 	std::filesystem::path                addcont_dir;
 	std::vector<Common::AddContentEntry> addcont;
 };

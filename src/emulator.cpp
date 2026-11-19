@@ -1,5 +1,7 @@
 #include "emulator.h"
 
+#include "benchmark.h"
+
 #include "common/abi.h"
 #include "common/assert.h"
 #include "common/emulatorConfig.h"
@@ -136,7 +138,7 @@ static void Execute(const std::filesystem::path& game_patch) {
 		Common::Singleton<Loader::RuntimeLinker>::Instance()->Execute(game_patch);
 	}).detach();
 	Libs::Graphics::WindowRun();
-	std::quick_exit(0);
+	std::quick_exit(Benchmark::Finish() ? 0 : 1);
 }
 
 void Run(const RunOptions& options) {
@@ -148,6 +150,7 @@ void Run(const RunOptions& options) {
 		EXIT("ELF is required\n");
 	}
 
+	Benchmark::Start(options);
 	const auto         param_json = options.app0_dir / "sce_sys" / "param.json";
 	Common::Subsystems subsystems(true);
 	Init(options.config, param_json, subsystems);

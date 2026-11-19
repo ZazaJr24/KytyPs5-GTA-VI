@@ -400,6 +400,8 @@ const ShaderModule* PipelineCache::GetProgram(const ShaderParams& params, InputI
 		return &module;
 	};
 	bool source_changed = false;
+	using Common::DebugCounters::Add;
+	using Common::DebugCounters::Counter;
 	if (entry != m_program_cache.end()) {
 		auto& cached = entry->second;
 		if (cached.skip_dispatch) return nullptr;
@@ -410,7 +412,10 @@ const ShaderModule* PipelineCache::GetProgram(const ShaderParams& params, InputI
 		} else {
 			module = cached.FindModule<false>(runtime, push_data_cursor);
 		}
-		if (module != nullptr) return bind(*module);
+		if (module != nullptr) {
+			Add(Counter::ShaderModuleHits);
+			return bind(*module);
+		}
 	}
 
 	options.shader_hash     = params.hash;
@@ -458,9 +463,11 @@ const ShaderModule* PipelineCache::GetProgram(const ShaderParams& params, InputI
 	} else if (source_changed) {
 		entry->second.resource_plan = ShaderRecompiler::IR::ExtractResourcePlan(translated.program);
 		if (const auto* module = entry->second.FindModule<true>(runtime, push_data_cursor)) {
+			Add(Counter::ShaderModuleHits);
 			return bind(*module);
 		}
 	}
+	Add(Counter::ShaderModuleMisses);
 	return bind(CompileModule(entry->second, entry->first, options, std::move(translated),
 	                          push_data_cursor));
 }
@@ -562,6 +569,8 @@ void PipelineCache::InitializeDriverCache() {
 		return;
 	}
 	if (!initial_data.empty()) {
+		Common::DebugCounters::Add(Common::DebugCounters::Counter::DriverCacheBytesLoaded,
+		                           initial_data.size());
 		PipelineCacheLog("Vulkan pipeline cache: loaded {:.2f} MB from {}",
 		                 static_cast<double>(initial_data.size()) / 1'000'000.0, path);
 	} else {
@@ -1060,6 +1069,9 @@ PipelineCache::Pipeline& PipelineCache::GetGraphicsPipeline(const CommandBuffer&
 
 	auto [iter, inserted] = m_graphics_pipelines.try_emplace(key);
 	auto& pipeline        = iter->second;
+	using Common::DebugCounters::Add;
+	using Common::DebugCounters::Counter;
+	Add(inserted ? Counter::PipelineMisses : Counter::PipelineHits);
 	if (!inserted) {
 		return pipeline;
 	}
@@ -1090,6 +1102,9 @@ PipelineCache::Pipeline& PipelineCache::GetComputePipeline(const ShaderComputeIn
 
 	auto [iter, inserted] = m_compute_pipelines.try_emplace(module.id);
 	auto& pipeline        = iter->second;
+	using Common::DebugCounters::Add;
+	using Common::DebugCounters::Counter;
+	Add(inserted ? Counter::PipelineMisses : Counter::PipelineHits);
 	if (!inserted) {
 		return pipeline;
 	}

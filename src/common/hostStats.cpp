@@ -499,6 +499,25 @@ constexpr size_t BUSIEST_THREADS = 6;
 
 } // namespace
 
+std::optional<uint64_t> GetPeakResidentBytes() noexcept {
+#if KYTY_PLATFORM == KYTY_PLATFORM_WINDOWS
+	PROCESS_MEMORY_COUNTERS memory {};
+	if (K32GetProcessMemoryInfo(GetCurrentProcess(), &memory, sizeof(memory)) != 0) {
+		return memory.PeakWorkingSetSize;
+	}
+#else
+	rusage usage {};
+	if (getrusage(RUSAGE_SELF, &usage) == 0) {
+#if defined(__APPLE__)
+		return static_cast<uint64_t>(usage.ru_maxrss);
+#else
+		return static_cast<uint64_t>(usage.ru_maxrss) * 1024;
+#endif
+	}
+#endif
+	return std::nullopt;
+}
+
 struct HostStatsSampler::Impl {
 	PlatformState state;
 	Counters      last;

@@ -1,0 +1,84 @@
+name: Fork validation
+
+on:
+  push:
+    branches: [performance]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Set up Clang and glslang
+        shell: pwsh
+        run: |
+          Join-Path $env:VCINSTALLDIR 'Tools\Llvm\x64\bin' >> $env:GITHUB_PATH
+          vcpkg install 'glslang[tools,opt]:x64-windows'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Join-Path (Split-Path (Get-Command vcpkg).Source) 'installed\x64-windows\tools\glslang' >> $env:GITHUB_PATH
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.10.3'
+          arch: win64_msvc2022_64
+          cache: true
+      - uses: mozilla-actions/sccache-action@v0.0.11
+      - name: Configure, build and test
+        shell: pwsh
+        env:
+          SCCACHE_GHA_ENABLED: 'true'
+        run: |
+          cmake -S . -B _Build/windows -G Ninja -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl `
+            -DKYTY_BUILD_ORIGIN=Fork "-DKYTY_BUILD_REPOSITORY=$env:GITHUB_REPOSITORY"
+          cmake --build _Build/windows --target launcher kyty_tests --parallel 3
+          ctest --test-dir _Build/windows --output-on-failure
+          cmake --install _Build/windows --prefix _Build/windows/install
+          $helpText = & './_Build/windows/install/kyty_emulator.exe' --help | Out-String
+          if ($LASTEXITCODE -ne 0 -or $helpText -notmatch '--benchmark-output') {
+            throw 'Benchmark CLI is missing from the installed emulator.'
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KytyPs5-GTA-VI-Windows
+          path: _Build/windows/install/
+          if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: mozilla-actions/sccache-action@v0.0.11
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes clang lld ninja-build glslang-tools \
+            libgl1-mesa-dev libx11-dev libxcursor-dev libxext-dev libxfixes-dev libxi-dev \
+            libxrandr-dev libxss-dev libxkbcommon-dev libasound2-dev libpulse-dev libudev-dev \
+            libdbus-1-dev libwayland-dev wayland-protocols
+      - name: Configure, build and test
+        env:
+          SCCACHE_GHA_ENABLED: 'true'
+        run: |
+          cmake -S . -B _Build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DKYTY_BUILD_LAUNCHER=OFF \
+            -DKYTY_BUILD_ORIGIN=Fork "-DKYTY_BUILD_REPOSITORY=$GITHUB_REPOSITORY"
+          cmake --build _Build/linux --target kyty_emulator kyty_tests --parallel 4
+          ctest --test-dir _Build/linux --output-on-failure
+          emulator="$(find _Build/linux -type f -name kyty_emulator -print -quit)"
+          "$emulator" --help > _Build/linux/emulator-help.txt
+          grep -F -- '--benchmark-output' _Build/linux/emulator-help.txt

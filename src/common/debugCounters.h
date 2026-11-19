@@ -9,7 +9,7 @@ namespace Common::DebugCounters {
 
 static_assert(std::atomic<uint64_t>::is_always_lock_free && std::atomic<bool>::is_always_lock_free);
 
-// Collect events only while the panel is visible. Relaxed, lock-free atomics keep updates
+// Collect events while the performance panel or a benchmark is active. Relaxed, lock-free atomics keep updates
 // cheap and safe in signal handlers. Rates come from comparing two snapshots.
 enum class Counter {
 	// GPU work.
@@ -25,6 +25,11 @@ enum class Counter {
 	ShaderCompileNs,
 	PipelinesCreated,
 	PipelineCreateNs,
+	ShaderModuleHits,
+	ShaderModuleMisses,
+	PipelineHits,
+	PipelineMisses,
+	DriverCacheBytesLoaded,
 	// Caches.
 	TextureUploadBytes,
 	TextureDownloadBytes,
@@ -58,17 +63,35 @@ enum class Counter {
 enum class Peak { ShaderCompileNs, PipelineCreateNs, Count };
 
 namespace Detail {
-inline std::atomic<bool>     g_enabled {false};
+inline std::atomic<uint32_t> g_sources {0};
+inline constexpr uint32_t OverlaySource = 1;
+inline constexpr uint32_t BenchmarkSource = 2;
 inline std::atomic<uint64_t> g_counters[static_cast<int>(Counter::Count)] {};
 inline std::atomic<uint64_t> g_peaks[static_cast<int>(Peak::Count)] {};
 } // namespace Detail
 
 [[nodiscard]] inline bool Enabled() noexcept {
-	return Detail::g_enabled.load(std::memory_order_relaxed);
+	return Detail::g_sources.load(std::memory_order_relaxed) != 0;
+}
+
+[[nodiscard]] inline bool OverlayEnabled() noexcept {
+	return (Detail::g_sources.load(std::memory_order_relaxed) & Detail::OverlaySource) != 0;
 }
 
 inline void SetEnabled(bool enabled) noexcept {
-	Detail::g_enabled.store(enabled, std::memory_order_relaxed);
+	if (enabled) {
+		Detail::g_sources.fetch_or(Detail::OverlaySource, std::memory_order_relaxed);
+	} else {
+		Detail::g_sources.fetch_and(~Detail::OverlaySource, std::memory_order_relaxed);
+	}
+}
+
+inline void SetBenchmarkEnabled(bool enabled) noexcept {
+	if (enabled) {
+		Detail::g_sources.fetch_or(Detail::BenchmarkSource, std::memory_order_relaxed);
+	} else {
+		Detail::g_sources.fetch_and(~Detail::BenchmarkSource, std::memory_order_relaxed);
+	}
 }
 
 inline void Add(Counter counter, uint64_t value = 1) noexcept {

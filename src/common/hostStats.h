@@ -65,6 +65,8 @@ struct HostStats {
 	std::optional<uint64_t> gpu_recoveries; // GPU resets since boot.
 };
 
+[[nodiscard]] std::optional<uint64_t> GetPeakResidentBytes() noexcept;
+
 // May block for a few milliseconds (thread enumeration, OS registry reads), so call it off the
 // render thread. The first sample has no rates.
 class HostStatsSampler final {

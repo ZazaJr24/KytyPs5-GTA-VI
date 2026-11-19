@@ -326,6 +326,8 @@ add_gpu_blit_shader(gpu_mesh_indirect gpu_mesh_indirect.task --target-env spirv1
 list(APPEND kyty_emulator_src ${gpu_blit_shader_headers})
 
 list(APPEND kyty_emulator_src
+	"${KYTY_SOURCE_DIR}/benchmark.cpp"
+	"${KYTY_SOURCE_DIR}/benchmark.h"
 	"${KYTY_SOURCE_DIR}/emulator.h"
 	"${KYTY_SOURCE_DIR}/emulator.cpp"
 )

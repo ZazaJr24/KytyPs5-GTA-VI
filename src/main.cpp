@@ -93,6 +93,9 @@ static void PrintUsage() {
 	::printf("  --no-trophy-notifications            Disable trophy unlock toasts and their sound.\n");
 	::printf(
 	    "  --trophy-duration <seconds>          Trophy toast duration, 5-10. Default: 6.\n");
+	::printf("  --benchmark-output <json>            Export benchmark data to a new file.\n");
+	::printf("  --benchmark-seconds <num>            Exit after this many seconds from benchmark start.\n");
+	::printf("  --benchmark-cache-state <value>      Label the isolated run as cold or warm.\n");
 	::printf("  --perf-overlay                       Show the performance panel (F2 or Cmd+P).\n");
 	::printf("  --playgo-hack                        Report 1000 PlayGo chunks without chunk metadata.\n");
 	::printf("  --skip-notice-screen                 Skip startup logos and notices in supported games.\n");
@@ -288,6 +291,23 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 				         value.c_str());
 				return false;
 			}
+		} else if (arg == "--benchmark-output") {
+			if (value.empty() || value.starts_with("--") || !options.benchmark_output.empty()) {
+				::printf("--benchmark-output requires one nonempty file path\n");
+				return false;
+			}
+			options.benchmark_output = Common::PathFromUtf8(value);
+		} else if (arg == "--benchmark-seconds") {
+			if (!ParseUint32(value, options.benchmark_seconds) || options.benchmark_seconds == 0) {
+				::printf("--benchmark-seconds requires a positive integer\n");
+				return false;
+			}
+		} else if (arg == "--benchmark-cache-state") {
+			if (value != "cold" && value != "warm") {
+				::printf("--benchmark-cache-state must be cold or warm\n");
+				return false;
+			}
+			options.benchmark_cache_state = value;
 		} else if (arg == "--guest-exec") {
 			options.elf = Common::PathFromUtf8(Common::FixFilenameSlash(value));
 			options.config.guest_arguments.assign(argv + i + 1, argv + argc);
@@ -453,6 +473,12 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 
 	if (options.config.gpu_assisted_validation_enabled) {
 		options.config.vulkan_validation_enabled = true;
+	}
+
+	if (options.benchmark_output.empty() &&
+	    (options.benchmark_seconds != 0 || !options.benchmark_cache_state.empty())) {
+		::printf("benchmark settings require --benchmark-output\n");
+		return false;
 	}
 
 	return show_help || (!options.app0_dir.empty() && !options.elf.empty());
