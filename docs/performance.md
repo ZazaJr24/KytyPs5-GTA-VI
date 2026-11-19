@@ -15,6 +15,13 @@ A benchmark begins before emulator initialization. It counts new, nonblank guest
 
 `--benchmark-cache-state` only labels the run. For a cold run use a fresh working directory. For a warm run reuse the corresponding cold run's working directory after an orderly exit and keep `--shader-cache` enabled for both. This isolates Kyty's local shader and pipeline data. Driver and OS caches may still persist across runs.
 
+## Experimental pipeline warmup
+
+Add `--pipeline-warmup-limit 128` to a cache-enabled run to prebuild up to 128 saved Vulkan
+pipelines in first-use order, with at most four workers. Use `0` to defer all Vulkan pipeline
+creation to first use. Shader modules still load from the persistent cache. Compare warm startup
+and P99 together, since deferred creation can move work from boot into gameplay.
+
 ## Compare
 
 Use the same benchmark instrumentation, scenario, game build, hardware, graphics driver, resolution and inputs for both revisions. Run five cold and five warm trials per revision. Record the save or replay and the start/stop conditions so someone else can repeat the scenario. Compare the medians of each per-run metric. Reject candidate changes with visual, stability or audio regressions. The default-enable gate is a 10% improvement in the target metric and at most 5% regression across the other reference scenarios.

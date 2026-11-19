@@ -1071,10 +1071,11 @@ PipelineCache::Pipeline& PipelineCache::GetGraphicsPipeline(const CommandBuffer&
 	auto& pipeline        = iter->second;
 	using Common::DebugCounters::Add;
 	using Common::DebugCounters::Counter;
-	Add(inserted ? Counter::PipelineMisses : Counter::PipelineHits);
-	if (!inserted) {
+	if (pipeline.pipeline != nullptr) {
+		Add(Counter::PipelineHits);
 		return pipeline;
 	}
+	Add(Counter::PipelineMisses);
 
 	if (graphics_debug_dump_enabled()) {
 		ShaderDbgDumpInputInfo(vs_input_info);
@@ -1089,7 +1090,9 @@ PipelineCache::Pipeline& PipelineCache::GetGraphicsPipeline(const CommandBuffer&
 		                                         Common::DebugCounters::Peak::PipelineCreateNs);
 		CreatePipelineInternal(m_graphics, pipeline, key, stages, m_driver_cache);
 	}
-	StorePipeline(key);
+	if (inserted) {
+		StorePipeline(key);
+	}
 	CheckpointDriverCache();
 
 	return pipeline;

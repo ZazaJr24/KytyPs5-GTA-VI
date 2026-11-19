@@ -169,6 +169,10 @@ bool ShaderCacheEnabled() {
 	return g_config->shader_cache_enabled;
 }
 
+std::optional<uint32_t> GetPipelineWarmupLimit() {
+	return g_config->pipeline_warmup_limit;
+}
+
 LogDirection GetShaderLogDirection() {
 	return g_config->shader_log_direction;
 }

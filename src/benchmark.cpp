@@ -83,6 +83,8 @@ Json Counters() {
 	    {"pipeline_create_peak_ns", Get(Peak::PipelineCreateNs)},
 	    {"pipeline_hits", Get(Counter::PipelineHits)},
 	    {"pipeline_misses", Get(Counter::PipelineMisses)},
+	    {"pipelines_prewarmed", Get(Counter::PipelinesPrewarmed)},
+	    {"pipeline_warmup_ns", Get(Counter::PipelineWarmupNs)},
 	    {"driver_cache_bytes_loaded", Get(Counter::DriverCacheBytesLoaded)},
 	    {"queue_submits", Get(Counter::QueueSubmits)},
 	    {"gpu_waits", Get(Counter::GpuWaits)},
@@ -147,6 +149,7 @@ void Start(const RunOptions& options) {
 	    {"present_mode", magic_enum::enum_name(options.config.present_mode)},
 	    {"vblank_hz", options.config.vblank_frequency},
 	    {"persistent_shader_cache_enabled", options.config.shader_cache_enabled},
+	    {"pipeline_warmup_limit", OptionalValue(options.config.pipeline_warmup_limit)},
 	    {"cache_state", options.benchmark_cache_state.empty() ? "unspecified" :
 	                                                              options.benchmark_cache_state},
 	    {"duration_seconds_requested", options.benchmark_seconds},

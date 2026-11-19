@@ -29,6 +29,8 @@ enum class Counter {
 	ShaderModuleMisses,
 	PipelineHits,
 	PipelineMisses,
+	PipelinesPrewarmed,
+	PipelineWarmupNs,
 	DriverCacheBytesLoaded,
 	// Caches.
 	TextureUploadBytes,

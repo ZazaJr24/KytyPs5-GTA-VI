@@ -25,6 +25,7 @@
 #include <thread>
 #include <type_traits>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 namespace Libs::Graphics {
@@ -246,6 +247,8 @@ private:
 	};
 
 	using ModuleMap = std::unordered_map<uint64_t, const ShaderModule*>;
+	using GraphicsPipelineMap = std::unordered_map<GraphicsPipelineKey, Pipeline, GraphicsPipelineKeyHash>;
+	using WarmupEntry = std::variant<GraphicsPipelineMap::value_type*, uint64_t>;
 
 	GraphicContext&                        m_graphics;
 	ShaderRecompiler::IR::ImageHeapSource* m_image_heap;
@@ -257,7 +260,7 @@ private:
 	std::filesystem::path         m_driver_cache_path;
 	std::chrono::steady_clock::time_point m_next_driver_cache_save;
 	bool                          m_driver_cache_dirty = false;
-	std::unordered_map<GraphicsPipelineKey, Pipeline, GraphicsPipelineKeyHash> m_graphics_pipelines;
+	GraphicsPipelineMap                                                        m_graphics_pipelines;
 	std::unordered_map<uint64_t, Pipeline>                                     m_compute_pipelines;
 	std::unordered_map<uint64_t, ShaderTessellationInputInfo>                  m_tess_layouts;
 	// Records everything first created if a shader store is open, and writes the driver cache.
@@ -277,7 +280,7 @@ private:
 
 	// pipelineSerialization.cpp
 	void WarmUp(const std::filesystem::path& path);
-	bool LoadRecord(std::span<const uint8_t>& records);
+	bool LoadRecord(std::span<const uint8_t>& records, std::vector<WarmupEntry>& warmup_entries);
 	void StoreModule(const ProgramKey& key, const Program& program, const ShaderModule& module,
 	                 const std::vector<uint32_t>& spirv);
 	void StorePipeline(const GraphicsPipelineKey& key);

@@ -1,5 +1,7 @@
 #include "graphics/host_gpu/renderer/pipeline/pipelineCache.h"
 
+#include "common/debugCounters.h"
+#include "common/emulatorConfig.h"
 #include "common/logging/log.h"
 #include "common/parallelFor.h"
 #include "common/stringUtils.h"
@@ -146,7 +148,10 @@ void PipelineCache::WarmUp(const std::filesystem::path& path) {
 	if (header.empty()) {
 		return;
 	}
-	const auto           start = std::chrono::steady_clock::now();
+	using Common::DebugCounters::Add;
+	using Common::DebugCounters::Counter;
+	Common::DebugCounters::ScopedTimer timer(Counter::PipelineWarmupNs);
+	const auto start = std::chrono::steady_clock::now();
 	std::vector<uint8_t> bytes;
 	if (Common::File file;
 	    Common::File::IsFileExisting(path) && file.Open(path, Common::File::Mode::Read)) {
@@ -155,16 +160,19 @@ void PipelineCache::WarmUp(const std::filesystem::path& path) {
 		file.Read(bytes.data(), static_cast<uint32_t>(bytes.size()), &read);
 		bytes.resize(read);
 	}
+	const auto warmup_limit = Config::GetPipelineWarmupLimit();
+	const auto workers = warmup_limit ? std::min(size_t {4}, Common::ParallelThreads())
+	                                  : Common::ParallelThreads();
 	Log::WriteToConsoleAndLog(fmt::format(
-	    "Shader cache: compiling shaders and pipelines from {} ({:.1f} MB) with {} threads\n",
-	    Common::PathToString(path), static_cast<double>(bytes.size()) / 1'000'000.0,
-	    Common::ParallelThreads()));
+	    "Shader cache: compiling shaders and pipelines from {} ({:.1f} MB) with up to {} threads\n",
+	    Common::PathToString(path), static_cast<double>(bytes.size()) / 1'000'000.0, workers));
+	std::vector<WarmupEntry> warmup_entries;
 	auto       records = std::span<const uint8_t>(bytes);
 	const bool reusable =
 	    records.size() >= header.size() && std::ranges::equal(records.first(header.size()), header);
 	if (reusable) {
 		records = records.subspan(header.size());
-		while (LoadRecord(records)) {
+		while (LoadRecord(records, warmup_entries)) {
 		}
 	}
 	// A damaged record ends the store; the records before it stay.
@@ -172,37 +180,52 @@ void PipelineCache::WarmUp(const std::filesystem::path& path) {
 
 	const auto modules = MapModules();
 	std::vector<Common::UniqueFunction<void>> jobs;
-	jobs.reserve(m_graphics_pipelines.size() + modules.size());
-	for (auto& node: m_graphics_pipelines) {
-		jobs.emplace_back([this, &modules, &node] {
-			CreateGraphicsPipeline(node.second, node.first, modules);
-		});
-	}
-	// A compute pipeline depends only on its module.
-	for (const auto* module: modules | std::views::values) {
-		if (module != nullptr && module->info.stage == ShaderType::Compute) {
-			jobs.emplace_back([this, module, &pipeline = m_compute_pipelines[module->id]] {
-				CreatePipelineInternal(m_graphics, pipeline, *module, m_driver_cache);
+	const auto job_limit = warmup_limit ? std::min<size_t>(*warmup_limit, warmup_entries.size())
+	                                    : warmup_entries.size();
+	jobs.reserve(job_limit);
+	for (const auto& entry: warmup_entries) {
+		if (jobs.size() == job_limit) {
+			break;
+		}
+		if (const auto* graphics = std::get_if<GraphicsPipelineMap::value_type*>(&entry)) {
+			auto* node = *graphics;
+			jobs.emplace_back([this, &modules, node] {
+				if (CreateGraphicsPipeline(node->second, node->first, modules)) {
+					Add(Counter::PipelinesPrewarmed);
+				}
 			});
+		} else {
+			const auto* module = modules.at(std::get<uint64_t>(entry));
+			auto [iter, inserted] = m_compute_pipelines.try_emplace(module->id);
+			if (inserted) {
+				jobs.emplace_back([this, module, &pipeline = iter->second] {
+					CreatePipelineInternal(m_graphics, pipeline, *module, m_driver_cache);
+					Add(Counter::PipelinesPrewarmed);
+				});
+			}
 		}
 	}
-	Common::ParallelFor(jobs.size(), [&](size_t i) { jobs[i](); });
-	// A key with a stage missing from the store keeps no pipeline.
-	std::erase_if(m_graphics_pipelines,
-	              [](const auto& entry) { return entry.second.pipeline == nullptr; });
-	if (!m_graphics_pipelines.empty() || !m_compute_pipelines.empty()) {
+	Common::ParallelFor(jobs.size(), [&](size_t i) { jobs[i](); }, workers);
+	const auto graphics_ready = std::ranges::count_if(
+	    m_graphics_pipelines, [](const auto& entry) { return entry.second.pipeline != nullptr; });
+	if (!warmup_limit) {
+		std::erase_if(m_graphics_pipelines,
+		              [](const auto& entry) { return entry.second.pipeline == nullptr; });
+	}
+	if (graphics_ready != 0 || !m_compute_pipelines.empty()) {
 		CheckpointDriverCache();
 	}
 	Log::WriteToConsoleAndLog(fmt::format(
 	    "Shader cache: loaded {} programs, {} modules, {} pipelines in {} ms\n",
 	    m_program_cache.size(), modules.size() - 1,
-	    m_graphics_pipelines.size() + m_compute_pipelines.size(),
+	    static_cast<size_t>(graphics_ready) + m_compute_pipelines.size(),
 	    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
 	                                                          start)
 	        .count()));
 }
 
-bool PipelineCache::LoadRecord(std::span<const uint8_t>& records) {
+bool PipelineCache::LoadRecord(std::span<const uint8_t>& records,
+                               std::vector<WarmupEntry>& warmup_entries) {
 	Frame frame;
 	if (records.size() < sizeof(frame)) {
 		return false;
@@ -244,6 +267,9 @@ bool PipelineCache::LoadRecord(std::span<const uint8_t>& records) {
 				return false;
 			}
 			module.module = CompileSPV(spirv, m_graphics.device);
+			if (module.info.stage == ShaderType::Compute) {
+				warmup_entries.emplace_back(module.id);
+			}
 			program->second.modules.push_back(std::move(module));
 			break;
 		}
@@ -253,8 +279,10 @@ bool PipelineCache::LoadRecord(std::span<const uint8_t>& records) {
 			if (!complete()) {
 				return false;
 			}
-			// WarmUp creates the pipeline once every record is loaded.
-			m_graphics_pipelines.try_emplace(key);
+			auto [entry, inserted] = m_graphics_pipelines.try_emplace(key);
+			if (inserted) {
+				warmup_entries.emplace_back(&*entry);
+			}
 			break;
 		}
 		case Record::TessellationLayout: {

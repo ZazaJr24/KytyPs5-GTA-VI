@@ -70,6 +70,7 @@ static void PrintUsage() {
 	         "                                       Implies --vulkan-validation; very slow.\n");
 	::printf("  --shader-validation                  Enable shader validation.\n");
 	::printf("  --shader-cache                       Keep compiled shaders and pipelines between boots.\n");
+	::printf("  --pipeline-warmup-limit <num>        Prebuild at most this many cached pipelines; 0 defers all.\n");
 	::printf("  --tessellation                      Draw tessellation patches; skipped by default.\n");
 	::printf("  --occlusion-queries                  Count occlusion query samples on the GPU.\n");
 	::printf("  --relaxed-shader-float               Native GPU float ops in shaders; faster, can be inaccurate.\n");
@@ -297,6 +298,13 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 				return false;
 			}
 			options.benchmark_output = Common::PathFromUtf8(value);
+		} else if (arg == "--pipeline-warmup-limit") {
+			uint32_t limit = 0;
+			if (!ParseUint32(value, limit)) {
+				::printf("--pipeline-warmup-limit requires a nonnegative integer\n");
+				return false;
+			}
+			options.config.pipeline_warmup_limit = limit;
 		} else if (arg == "--benchmark-seconds") {
 			if (!ParseUint32(value, options.benchmark_seconds) || options.benchmark_seconds == 0) {
 				::printf("--benchmark-seconds requires a positive integer\n");
@@ -469,6 +477,11 @@ static bool ParseArgs(int argc, char* argv[], RunOptions& options, bool& show_he
 			::printf("unknown option: %s\n", arg.c_str());
 			return false;
 		}
+	}
+
+	if (options.config.pipeline_warmup_limit && !options.config.shader_cache_enabled) {
+		::printf("--pipeline-warmup-limit requires --shader-cache\n");
+		return false;
 	}
 
 	if (options.config.gpu_assisted_validation_enabled) {

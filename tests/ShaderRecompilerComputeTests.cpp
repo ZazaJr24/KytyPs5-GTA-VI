@@ -755,7 +755,10 @@ struct PipelineCacheTestAccess {
   static const auto &TessLayouts(const PipelineCache &cache) { return cache.m_tess_layouts; }
 
   static std::array<size_t, 2> Pipelines(const PipelineCache &cache) {
-    return {cache.m_graphics_pipelines.size(), cache.m_compute_pipelines.size()};
+    const auto graphics = std::ranges::count_if(cache.m_graphics_pipelines, [](const auto &entry) {
+      return entry.second.pipeline != nullptr;
+    });
+    return {static_cast<size_t>(graphics), cache.m_compute_pipelines.size()};
   }
 };
 
@@ -50076,6 +50079,18 @@ void CheckShaderStore(VulkanHarness &vulkan) {
   warm.compiled = {};
   Require(name, "warm restart", run() == warm && std::filesystem::file_size(store) == size,
           "a restart compiled a module, created a pipeline late or rewrote the store");
+  Config::Load({.pipeline_warmup_limit = 0});
+  auto deferred = warm;
+  deferred.prewarmed = {};
+  Require(name, "deferred pipelines",
+          run() == deferred && std::filesystem::file_size(store) == size,
+          "lazy creation changed the guest result, recompiled shaders or duplicated cache records");
+  Config::Load({.pipeline_warmup_limit = 1});
+  deferred.prewarmed[1] = 1;
+  Require(name, "bounded warmup", run() == deferred && std::filesystem::file_size(store) == size,
+          "warmup did not respect the pipeline budget in recorded order");
+  Config::Load({.pipeline_warmup_limit = std::nullopt});
+
   std::filesystem::resize_file(store, size + 3);
   Require(name, "torn tail", run() == warm && std::filesystem::file_size(store) == size,
           "a torn last record was kept");
