@@ -22,7 +22,8 @@ public:
 	explicit MainDialog(QWidget* parent = nullptr);
 	~MainDialog() override = default;
 
-	void RunInterpreter(QProcess* process, const Configuration& info, bool close_terminal);
+	void RunInterpreter(QProcess* process, const Configuration& info, bool close_terminal,
+	                    const QString& benchmark_output);
 
 	static void WriteSettings(QSettings& s);
 	static void ReadSettings(QSettings& s);

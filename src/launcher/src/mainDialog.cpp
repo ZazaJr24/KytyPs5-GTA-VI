@@ -16,18 +16,26 @@
 #include <QDialog>
 #include <QDir>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
+#include <QHBoxLayout>
+#include <QImage>
 #include <QLabel>
 #include <QMessageBox>
 #include <QObject>
+#include <QPainter>
+#include <QPainterPath>
 #include <QPointer>
 #include <QProcess>
+#include <QPushButton>
 #include <QRadioButton>
 #include <QRegularExpression>
 #include <QSettings>
 #include <QStringList>
+#include <QStyle>
 #include <QStyleHints>
 #include <QVariant>
+#include <QVBoxLayout>
 #include <QtCore>
 
 #include <cstdint>
@@ -58,6 +66,49 @@ constexpr char SETTINGS_CHECK_UPDATES[]      = "check_updates_on_startup";
 constexpr char SETTINGS_CLOSE_TERMINAL[]     = "close_terminal";
 constexpr char SETTINGS_THEME[]              = "theme";
 
+namespace {
+
+class CoastalHero final: public QWidget {
+public:
+	explicit CoastalHero(QWidget* parent)
+	    : QWidget(parent), m_artwork(QStringLiteral(":/artwork/coastal-drive.png")) {
+		setObjectName(QStringLiteral("coastalHero"));
+		setMinimumHeight(245);
+	}
+
+protected:
+	void paintEvent(QPaintEvent*) override {
+		QPainter painter(this);
+		painter.setRenderHint(QPainter::Antialiasing);
+		painter.setRenderHint(QPainter::SmoothPixmapTransform);
+		QPainterPath card;
+		card.addRoundedRect(QRectF(rect()), 18, 18);
+		painter.setClipPath(card);
+		painter.fillRect(rect(), QColor("#14121f"));
+		if (!m_artwork.isNull() && width() > 0 && height() > 0) {
+			const auto crop_width =
+			    qMin<qreal>(m_artwork.width(), qreal(width()) * m_artwork.height() / height());
+			const auto crop_height =
+			    qMin<qreal>(m_artwork.height(), qreal(height()) * m_artwork.width() / width());
+			const QRectF source((m_artwork.width() - crop_width) * 0.76,
+			                    (m_artwork.height() - crop_height) * 0.65,
+			                    crop_width, crop_height);
+			painter.drawImage(QRectF(rect()), m_artwork, source);
+		}
+		QLinearGradient shade(0, 0, width(), 0);
+		shade.setColorAt(0.0, QColor(17, 14, 25, 248));
+		shade.setColorAt(0.37, QColor(17, 14, 25, 223));
+		shade.setColorAt(0.63, QColor(17, 14, 25, 65));
+		shade.setColorAt(1.0, QColor(17, 14, 25, 5));
+		painter.fillRect(rect(), shade);
+	}
+
+private:
+	QImage m_artwork;
+};
+
+} // namespace
+
 class MainDialogPrivate: public QObject {
 	Q_OBJECT
 
@@ -71,7 +122,7 @@ public:
 
 	void Update();
 	void FindInterpreter();
-	void Run(const QString& activity);
+	void Run(const QString& activity, const QString& benchmark_output = {});
 
 	[[nodiscard]] const QString& GetInterpreter() const { return m_interpreter; }
 
@@ -79,6 +130,8 @@ public:
 	static void ReadSettings(QSettings& s);
 
 private:
+	void CreateHero();
+	void ChooseBenchmarkOutput();
 	static QByteArray g_last_geometry;
 	static bool       g_check_updates_on_startup;
 	static bool       g_close_terminal;
@@ -87,7 +140,8 @@ private:
 	static void ApplyTheme(int theme) {
 		auto scheme = Qt::ColorScheme::Unknown;
 		switch (theme) {
-			case 1: scheme = Qt::ColorScheme::Dark; break;
+			case 1:
+			case 3: scheme = Qt::ColorScheme::Dark; break;
 			case 2: scheme = Qt::ColorScheme::Light; break;
 			default: break;
 		}
@@ -100,6 +154,10 @@ private:
 	ControllerPreview m_controller_preview;
 	TitleSound      m_title_sound;
 	QString         m_interpreter;
+	QLabel*         m_selection = nullptr;
+	QPushButton*    m_launch = nullptr;
+	QPushButton*    m_settings = nullptr;
+	QPushButton*    m_benchmark = nullptr;
 
 	int m_running_games = 0;
 };
@@ -107,7 +165,7 @@ private:
 QByteArray MainDialogPrivate::g_last_geometry;
 bool       MainDialogPrivate::g_check_updates_on_startup = true;
 bool       MainDialogPrivate::g_close_terminal           = false;
-int        MainDialogPrivate::g_theme                    = 0;
+int        MainDialogPrivate::g_theme                    = 3;
 
 MainDialog::MainDialog(QWidget* parent): QDialog(parent), m_p(new MainDialogPrivate(this)) {
 	m_p->Setup(this);
@@ -123,11 +181,15 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
 	m_ui->widget->SetControllerPreview(&m_controller_preview);
 
 	m_main_dialog = main_dialog;
+	CreateHero();
 	m_update_checker = new UpdateChecker(main_dialog);
 	m_ui->check_updates_on_startup->setChecked(g_check_updates_on_startup);
 	m_ui->close_terminal->setChecked(g_close_terminal);
 	m_ui->theme_combo->setCurrentIndex(g_theme);
 	ApplyTheme(g_theme);
+	m_main_dialog->setProperty("gtaCoast", g_theme == 3);
+	m_ui->label_Interpreter->hide();
+	m_ui->label_settings_file->hide();
 	m_ui->check_updates_link->setVisible(UpdateChecker::IsSupported());
 	m_ui->check_updates_on_startup->setVisible(UpdateChecker::IsSupported());
 #if defined(__APPLE__)
@@ -151,7 +213,8 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
 			        m_controller_preview.SetColor(color);
 		        }
 	        });
-	connect(m_ui->widget, &ConfigurationListWidget::Run, this, &MainDialogPrivate::Run);
+	connect(m_ui->widget, &ConfigurationListWidget::Run, this,
+	        [this](const QString& activity) { Run(activity); });
 	connect(m_ui->check_updates_link, &QLabel::linkActivated, this,
 	        [this](const QString&) { m_update_checker->Check(true); });
 	connect(m_update_checker, &UpdateChecker::CheckingChanged, m_ui->check_updates_link,
@@ -168,6 +231,10 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
 	connect(m_ui->theme_combo, &QComboBox::currentIndexChanged, this, [this](int index) {
 		g_theme = index;
 		ApplyTheme(index);
+		m_main_dialog->setProperty("gtaCoast", index == 3);
+		m_main_dialog->style()->unpolish(m_main_dialog);
+		m_main_dialog->style()->polish(m_main_dialog);
+		m_main_dialog->update();
 		m_ui->widget->WriteSettings();
 	});
 	connect(main_dialog, &MainDialog::Resize, [this]() {
@@ -180,6 +247,75 @@ void MainDialogPrivate::Setup(MainDialog* main_dialog) {
 	m_main_dialog->restoreGeometry(g_last_geometry);
 
 	Update();
+}
+
+void MainDialogPrivate::CreateHero() {
+	auto* hero = new CoastalHero(m_main_dialog);
+	m_ui->verticalLayout_5->insertWidget(0, hero);
+	m_ui->verticalLayout_5->setSpacing(10);
+	auto* stack = new QVBoxLayout(hero);
+	stack->setContentsMargins(27, 20, 22, 19);
+	stack->setSpacing(5);
+
+	auto* heading = new QLabel(tr("KytyPs5 GTA VI"), hero);
+	heading->setObjectName(QStringLiteral("coastalHeading"));
+	stack->addWidget(heading, 0, Qt::AlignLeft);
+	auto* status = new QLabel(tr("GTA VI compatibility is untested"), hero);
+	status->setObjectName(QStringLiteral("coastalStatus"));
+	stack->addWidget(status, 0, Qt::AlignLeft);
+	stack->addStretch();
+
+	m_selection = new QLabel(hero);
+	m_selection->setObjectName(QStringLiteral("coastalSelection"));
+	m_selection->setTextFormat(Qt::PlainText);
+	m_selection->setWordWrap(true);
+	m_selection->setMaximumWidth(430);
+	stack->addWidget(m_selection, 0, Qt::AlignLeft);
+
+	auto make_button = [hero](const QString& label) {
+		auto* button = new QPushButton(label, hero);
+		button->setAutoDefault(false);
+		return button;
+	};
+	m_launch = make_button(tr("Launch selected"));
+	m_launch->setObjectName(QStringLiteral("coastalLaunch"));
+	m_settings = make_button(tr("Game settings"));
+	m_benchmark = make_button(tr("Benchmark"));
+	m_benchmark->setToolTip(tr("Capture frame timing and resource counters for up to 120 seconds"));
+	auto* folders = make_button(tr("Game folders"));
+	auto* actions = new QHBoxLayout;
+	actions->setSpacing(7);
+	actions->addWidget(m_launch);
+	actions->addWidget(m_settings);
+	actions->addWidget(m_benchmark);
+	actions->addWidget(folders);
+	actions->addStretch();
+	stack->addLayout(actions);
+
+	connect(m_launch, &QPushButton::clicked, this, [this] { Run({}); });
+	connect(m_settings, &QPushButton::clicked, m_ui->widget,
+	        &ConfigurationListWidget::OpenSelectedGameSettings);
+	connect(folders, &QPushButton::clicked, m_ui->widget, &ConfigurationListWidget::OpenGameFolders);
+	connect(m_benchmark, &QPushButton::clicked, this, &MainDialogPrivate::ChooseBenchmarkOutput);
+}
+
+void MainDialogPrivate::ChooseBenchmarkOutput() {
+	const auto output = QFileDialog::getSaveFileName(
+	    m_main_dialog, tr("Save 120-second benchmark"),
+	    QDir::home().filePath(QStringLiteral("kyty-benchmark.json")), tr("JSON report (*.json)"),
+	    nullptr, QFileDialog::DontConfirmOverwrite);
+	if (output.isEmpty()) {
+		return;
+	}
+	const auto path = output.endsWith(QStringLiteral(".json"), Qt::CaseInsensitive)
+	                      ? output
+	                      : output + QStringLiteral(".json");
+	if (QFileInfo::exists(path)) {
+		QMessageBox::warning(m_main_dialog, tr("Benchmark report"),
+		                     tr("Choose a new file name. Existing benchmark reports are preserved."));
+		return;
+	}
+	Run({}, path);
 }
 
 void MainDialogPrivate::FindInterpreter() {
@@ -209,6 +345,8 @@ void MainDialogPrivate::FindInterpreter() {
 		if (lines.count() >= 2) {
 			m_ui->label_Version->setText(
 			    tr("Version: ") + (lines.at(0).startsWith("exe_name") ? lines.at(1) : lines.at(0)));
+			m_ui->label_Version->setToolTip(m_ui->label_Interpreter->text() + QStringLiteral("\n") +
+			                               m_ui->label_settings_file->text());
 		} else {
 			found = false;
 		}
@@ -219,11 +357,6 @@ void MainDialogPrivate::FindInterpreter() {
 		QApplication::quit();
 		return;
 	}
-
-	// Prompt for a game folder when none are configured, but keep the launcher
-	// open if the user dismisses the dialog (quitting here can segfault during
-	// nested modal shutdown / background compatibility load).
-	m_ui->widget->EnsureGameDirectory();
 
 	m_ui->label_settings_file->setText(tr("Settings file: ") + m_ui->widget->GetSettingsFile());
 
@@ -287,6 +420,10 @@ static QStringList CreateEmulatorArgs(const Configuration& info) {
 	AddFlag(args, info.relaxed_shader_float, "--relaxed-shader-float");
 	AddFlag(args, info.native_rt, "--native-rt");
 	AddFlag(args, info.shader_cache_enabled, "--shader-cache");
+	if (info.shader_cache_enabled && info.pipeline_warmup_limit >= 0) {
+		args << "--pipeline-warmup-limit" << QString::number(info.pipeline_warmup_limit);
+	}
+	AddFlag(args, info.archive_read_ahead, "--archive-read-ahead");
 	args << "--vblank-frequency" << QString::number(info.vblank_frequency);
 	args << "--console-language" << QString::number(info.console_language);
 	AddFlag(args, info.vulkan_validation_enabled, "--vulkan-validation");
@@ -423,7 +560,8 @@ static QString CmdCommand(const QString& interpreter, const QStringList& args,
 }
 #endif
 
-void MainDialog::RunInterpreter(QProcess* process, const Configuration& info, bool close_terminal) {
+void MainDialog::RunInterpreter(QProcess* process, const Configuration& info, bool close_terminal,
+                                const QString& benchmark_output) {
 	const auto& interpreter = m_p->GetInterpreter();
 
 	auto args = CreateEmulatorArgs(info);
@@ -433,22 +571,28 @@ void MainDialog::RunInterpreter(QProcess* process, const Configuration& info, bo
 		return;
 	}
 
+	if (!benchmark_output.isEmpty()) {
+		args << "--benchmark-output" << benchmark_output << "--benchmark-seconds" << "120";
+	}
+
 	// Without a terminal, the emulator runs directly.
 	process->setProgram(interpreter);
 	process->setArguments(args);
 #ifdef __linux__
 	QString     terminal;
 	QStringList terminal_prefix;
-	if (FindTerminal(&terminal, &terminal_prefix)) {
+	if (benchmark_output.isEmpty() && FindTerminal(&terminal, &terminal_prefix)) {
 		process->setProgram(terminal);
 		process->setArguments(terminal_prefix + BashCommand(interpreter, args, close_terminal));
 	}
 #elif defined(_WIN32)
 	// Use nativeArguments so Qt does not re-quote the /K command string.
-	process->setProgram(CMD_EXE);
-	process->setArguments({});
-	process->setNativeArguments(
-	    CmdCommand(QDir::toNativeSeparators(interpreter), args, close_terminal));
+	if (benchmark_output.isEmpty()) {
+		process->setProgram(CMD_EXE);
+		process->setArguments({});
+		process->setNativeArguments(
+		    CmdCommand(QDir::toNativeSeparators(interpreter), args, close_terminal));
+	}
 #endif
 	process->setWorkingDirectory(QFileInfo(interpreter).absolutePath());
 #if defined(_WIN32)
@@ -509,16 +653,16 @@ void MainDialogPrivate::ReadSettings(QSettings& s) {
 	g_last_geometry = s.value(SETTINGS_MAIN_LAST_GEOMETRY, g_last_geometry).toByteArray();
 	g_check_updates_on_startup = s.value(SETTINGS_CHECK_UPDATES, true).toBool();
 	g_close_terminal           = s.value(SETTINGS_CLOSE_TERMINAL, false).toBool();
-	g_theme                    = s.value(SETTINGS_THEME, 0).toInt();
-	if (g_theme < 0 || g_theme > 2) {
-		g_theme = 0;
+	g_theme                    = s.value(SETTINGS_THEME, 3).toInt();
+	if (g_theme < 0 || g_theme > 3) {
+		g_theme = 3;
 	}
 
 	s.endGroup();
 }
 
-void MainDialogPrivate::Run(const QString& activity) {
-	if (m_update_checker->IsInstalling()) {
+void MainDialogPrivate::Run(const QString& activity, const QString& benchmark_output) {
+	if (!m_launch->isEnabled() || m_update_checker->IsInstalling()) {
 		return;
 	}
 	QPointer<ConfigurationItem> item = m_ui->widget->GetSelectedItem();
@@ -532,6 +676,18 @@ void MainDialogPrivate::Run(const QString& activity) {
 	m_title_sound.SetTitle({});
 
 	auto* process = new QProcess(this);
+	if (!benchmark_output.isEmpty()) {
+		process->setProcessChannelMode(QProcess::ForwardedChannels);
+		connect(process, &QProcess::finished, m_main_dialog,
+		        [dialog = m_main_dialog, benchmark_output](int code, QProcess::ExitStatus status) {
+			        if (code == 0 && status == QProcess::NormalExit && QFileInfo::exists(benchmark_output)) {
+				        QMessageBox::information(dialog, tr("Benchmark saved"), benchmark_output);
+			        } else {
+				        QMessageBox::warning(dialog, tr("Benchmark incomplete"),
+				                             tr("The emulator exited before saving the benchmark report."));
+			        }
+		        });
+	}
 	connect(process, &QProcess::stateChanged, this,
 	        [this, process, item](QProcess::ProcessState state) {
 		        if (state == QProcess::NotRunning) {
@@ -545,7 +701,7 @@ void MainDialogPrivate::Run(const QString& activity) {
 	        });
 	auto info             = m_ui->widget->CreateConfiguration(*item);
 	info->launch_activity = activity;
-	m_main_dialog->RunInterpreter(process, *info, g_close_terminal);
+	m_main_dialog->RunInterpreter(process, *info, g_close_terminal, benchmark_output);
 
 	Update();
 }
@@ -553,7 +709,8 @@ void MainDialogPrivate::Run(const QString& activity) {
 void MainDialogPrivate::Update() {
 	const auto* item = m_ui->widget->GetSelectedItem();
 
-	bool run_enabled = item != nullptr && !item->IsRunning() && !m_update_checker->IsInstalling();
+	bool run_enabled = !m_interpreter.isEmpty() && item != nullptr && !item->IsRunning() &&
+	                   !m_update_checker->IsInstalling();
 
 	if (run_enabled) {
 		const auto& info = item->GetInfo();
@@ -562,6 +719,27 @@ void MainDialogPrivate::Update() {
 	}
 
 	m_ui->widget->SetRunEnabled(run_enabled);
+	m_launch->setEnabled(run_enabled);
+	m_benchmark->setEnabled(run_enabled);
+	m_settings->setEnabled(!m_update_checker->IsInstalling() &&
+	                       (item == nullptr || !item->IsRunning()));
+	m_settings->setText(item == nullptr ? tr("Settings") : tr("Game settings"));
+	m_launch->setText(item != nullptr && item->GetInfo().IsGtaVi() ? tr("Launch GTA VI")
+	                                                             : tr("Launch selected"));
+	if (item == nullptr) {
+		m_selection->setText(tr("Add a game folder, then select a title in the library."));
+		m_selection->setToolTip({});
+	} else {
+		const auto& info = item->GetInfo();
+		auto title = info.name.isEmpty() ? QFileInfo(info.basedir).fileName() : info.name;
+		const auto effective = m_ui->widget->CreateConfiguration(*item);
+		m_selection->setText(item->IsRunning()
+		                         ? tr("%1 is running").arg(title)
+		                         : tr("%1  ·  %2  ·  %3")
+		                               .arg(title, effective->screen_resolution,
+		                                    EnumToText(effective->present_mode)));
+		m_selection->setToolTip(info.basedir);
+	}
 	m_update_checker->SetGameRunning(m_running_games > 0);
 	if (m_running_games > 0) {
 		m_controller_preview.SetSuspended(true);

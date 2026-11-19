@@ -75,8 +75,10 @@ public:
 
 	static constexpr int MIN_SCREEN_SIZE = 320;
 	static constexpr int MAX_SCREEN_SIZE = 16384;
+	static constexpr int MAX_PIPELINE_WARMUP = 65536;
 
 	static QString NormalizeResolution(const QString& text);
+	[[nodiscard]] bool IsGtaVi() const;
 
 	enum class PresentMode { Fifo, Mailbox, Immediate };
 	Q_ENUM(PresentMode)
@@ -131,6 +133,8 @@ public:
 	bool                   relaxed_shader_float        = false;
 	bool                   native_rt                   = false;
 	bool                   shader_cache_enabled        = true;
+	int                    pipeline_warmup_limit       = -1;
+	bool                   archive_read_ahead          = false;
 	bool                   trophy_enabled              = true;
 	int                    trophy_duration_seconds     = 6;
 	bool                   perf_overlay_enabled        = false;
@@ -183,6 +187,8 @@ public:
 		relaxed_shader_float        = other.relaxed_shader_float;
 		native_rt                   = other.native_rt;
 		shader_cache_enabled        = other.shader_cache_enabled;
+		pipeline_warmup_limit       = other.pipeline_warmup_limit;
+		archive_read_ahead          = other.archive_read_ahead;
 		trophy_enabled              = other.trophy_enabled;
 		trophy_duration_seconds     = other.trophy_duration_seconds;
 		perf_overlay_enabled        = other.perf_overlay_enabled;

@@ -18,6 +18,12 @@ QString Configuration::NormalizeResolution(const QString& text) {
 	return QStringLiteral("%1x%2").arg(width).arg(height);
 }
 
+bool Configuration::IsGtaVi() const {
+	static const QRegularExpression title(QStringLiteral(R"(\b(?:Grand\s+Theft\s+Auto|GTA)\s*(?:VI|6)\b)"),
+	                                      QRegularExpression::CaseInsensitiveOption);
+	return title.match(name).hasMatch();
+}
+
 QVariantMap Configuration::GameSettings() const {
 	QVariantMap values;
 #define KYTY_CFG_SET(n) values.insert(QStringLiteral(#n), QVariant::fromValue(n).toString())
@@ -41,6 +47,8 @@ QVariantMap Configuration::GameSettings() const {
 	KYTY_CFG_SET(relaxed_shader_float);
 	KYTY_CFG_SET(native_rt);
 	KYTY_CFG_SET(shader_cache_enabled);
+	KYTY_CFG_SET(pipeline_warmup_limit);
+	KYTY_CFG_SET(archive_read_ahead);
 	KYTY_CFG_SET(trophy_enabled);
 	KYTY_CFG_SET(trophy_duration_seconds);
 	KYTY_CFG_SET(perf_overlay_enabled);
@@ -104,6 +112,10 @@ void Configuration::ReadGameSettingsValues(const Settings& s) {
 	KYTY_CFG_GET(relaxed_shader_float);
 	KYTY_CFG_GET(native_rt);
 	shader_cache_enabled = s.value("shader_cache_enabled", shader_cache_enabled).toBool();
+	bool warmup_ok = false;
+	const auto warmup = s.value("pipeline_warmup_limit", pipeline_warmup_limit).toInt(&warmup_ok);
+	pipeline_warmup_limit = warmup_ok && warmup >= -1 && warmup <= MAX_PIPELINE_WARMUP ? warmup : -1;
+	archive_read_ahead = s.value("archive_read_ahead", archive_read_ahead).toBool();
 	trophy_enabled       = s.value("trophy_enabled", trophy_enabled).toBool();
 	KYTY_CFG_GET(trophy_duration_seconds);
 	KYTY_CFG_GET(perf_overlay_enabled);

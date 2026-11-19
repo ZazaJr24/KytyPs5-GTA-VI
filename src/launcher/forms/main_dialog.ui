@@ -6,18 +6,18 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>428</width>
-    <height>454</height>
+    <width>1120</width>
+    <height>810</height>
    </rect>
   </property>
   <property name="minimumSize">
    <size>
-    <width>0</width>
-    <height>0</height>
+    <width>720</width>
+    <height>620</height>
    </size>
   </property>
   <property name="windowTitle">
-   <string>KytyPS5 Launcher</string>
+   <string>KytyPs5 GTA VI</string>
   </property>
   <property name="locale">
    <locale language="English" country="UnitedStates"/>
@@ -144,6 +144,9 @@
             <property name="text">
              <string>Light</string>
             </property>
+           </item>
+           <item>
+            <property name="text"><string>Coast</string></property>
            </item>
           </widget>
          </item>

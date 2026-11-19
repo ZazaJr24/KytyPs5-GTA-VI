@@ -631,28 +631,6 @@ static Configuration* FindCustomInfo(QMap<QString, Configuration*>* custom_infos
 	return info;
 }
 
-bool ConfigurationListWidget::EnsureGameDirectory() {
-	if (HasValidGameDirectory()) {
-		return true;
-	}
-
-	QMessageBox::information(this, tr("Game folders"),
-	                         tr("Add at least one game folder in global settings."));
-	edit_global_settings();
-
-	return HasValidGameDirectory();
-}
-
-bool ConfigurationListWidget::HasValidGameDirectory() const {
-	for (const auto& dir: m_game_dirs) {
-		if (!dir.isEmpty() && QDir(dir).exists()) {
-			return true;
-		}
-	}
-
-	return false;
-}
-
 void ConfigurationListWidget::ScanGameDirectory() {
 	// Commit an active inline editor before destroying its row or replacing its data.
 	if (auto* focused = QApplication::focusWidget();
@@ -778,6 +756,11 @@ void ConfigurationListWidget::ScanGameDirectory() {
 			continue;
 		}
 
+		if (root.exists(eboot_name)) {
+			const auto game_path = NormalizeGameDirectory(root.absolutePath());
+			add_game(root.absolutePath(), game_path, root.dirName(), root.dirName(), false);
+			continue;
+		}
 		scan_archives(root, root);
 		QList<QDir> pending_dirs;
 		const auto  root_subdirs =
@@ -815,13 +798,28 @@ void ConfigurationListWidget::ScanGameDirectory() {
 	ConfigurationItem* selected_item = nullptr;
 	for (int index = 0; index < m_ui->cfgs_list->topLevelItemCount(); index++) {
 		auto* item = static_cast<ConfigurationItem*>(m_ui->cfgs_list->topLevelItem(index));
-		if (!item->isHidden() && item->GetInfo().game_path == selected_path) {
+		if (item->isHidden()) {
+			continue;
+		}
+		const auto& info = item->GetInfo();
+		if (info.game_path == selected_path) {
 			selected_item = item;
 			break;
+		}
+		if (selected_path.isEmpty() && selected_item == nullptr && info.IsGtaVi()) {
+			selected_item = item;
 		}
 	}
 	m_ui->cfgs_list->setCurrentItem(selected_item);
 	SelectItem(selected_item);
+}
+
+void ConfigurationListWidget::OpenSelectedGameSettings() {
+	if (m_selected_item != nullptr) {
+		edit_configuration();
+	} else {
+		edit_global_settings();
+	}
 }
 
 void ConfigurationListWidget::edit_configuration() {

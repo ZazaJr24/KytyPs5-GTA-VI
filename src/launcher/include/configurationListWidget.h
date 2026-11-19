@@ -41,7 +41,8 @@ public:
 	[[nodiscard]] std::unique_ptr<Configuration>
 	CreateConfiguration(const ConfigurationItem& item) const;
 
-	bool EnsureGameDirectory();
+	void OpenGameFolders() { edit_global_settings(); }
+	void OpenSelectedGameSettings();
 	void ScanGameDirectory();
 	void ViewTrophies();
 	void ViewTrophyOverview();
@@ -78,7 +79,6 @@ private:
 	void               UpdateToolbarIcons();
 	void               ImportGameSettings(QWidget* parent);
 	void               ExportGameSettings(QWidget* parent) const;
-	[[nodiscard]] bool HasValidGameDirectory() const;
 
 	ConfigurationItem*            m_selected_item = nullptr;
 	bool                          m_run_enabled   = true;

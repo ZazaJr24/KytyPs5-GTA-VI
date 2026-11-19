@@ -129,6 +129,9 @@ ConfigurationEditDialog::ConfigurationEditDialog(Configuration& info, QWidget* p
 	m_ui->setupUi(this);
 	MakeTabsScrollable();
 	InitGameDirectories();
+	m_ui->spinBox_pipeline_warmup->setMaximum(Configuration::MAX_PIPELINE_WARMUP);
+	connect(m_ui->checkBox_shader_cache, &QCheckBox::toggled,
+	        m_ui->spinBox_pipeline_warmup, &QWidget::setEnabled);
 	m_ui->controller_group->setVisible(false);
 	m_ui->settings_button->setVisible(false);
 
@@ -311,6 +314,9 @@ void ConfigurationEditDialog::Init(const Configuration& info) {
 	m_ui->checkBox_relaxed_shader_float->setChecked(info.relaxed_shader_float);
 	m_ui->checkBox_native_rt->setChecked(info.native_rt);
 	m_ui->checkBox_shader_cache->setChecked(info.shader_cache_enabled);
+	m_ui->spinBox_pipeline_warmup->setValue(info.pipeline_warmup_limit);
+	m_ui->spinBox_pipeline_warmup->setEnabled(info.shader_cache_enabled);
+	m_ui->checkBox_archive_read_ahead->setChecked(info.archive_read_ahead);
 	m_ui->checkBox_skip_notice_screen->setChecked(info.skip_notice_screen);
 	m_ui->checkBox_network_connected->setChecked(info.network_connected);
 	m_ui->checkBox_psn_emulation->setChecked(info.psn_emulation_enabled);
@@ -564,6 +570,8 @@ static void UpdateInfo(Configuration& info, Ui::ConfigurationEditDialog& ui, boo
 	info.relaxed_shader_float      = ui.checkBox_relaxed_shader_float->isChecked();
 	info.native_rt                 = ui.checkBox_native_rt->isChecked();
 	info.shader_cache_enabled      = ui.checkBox_shader_cache->isChecked();
+	info.pipeline_warmup_limit     = ui.spinBox_pipeline_warmup->value();
+	info.archive_read_ahead        = ui.checkBox_archive_read_ahead->isChecked();
 	info.skip_notice_screen        = ui.checkBox_skip_notice_screen->isChecked();
 	info.network_connected         = ui.checkBox_network_connected->isChecked();
 	info.psn_emulation_enabled     = ui.checkBox_psn_emulation->isChecked();

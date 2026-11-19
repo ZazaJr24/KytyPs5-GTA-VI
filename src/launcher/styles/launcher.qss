@@ -118,3 +118,67 @@ QLabel#game_status_indicator {
     border: 1px solid palette(base);
     border-radius: 6px;
 }
+
+/* Coastal launcher */
+QDialog#MainDialog[gtaCoast="true"] {
+    background: #161321;
+    color: #f7edf6;
+}
+
+QWidget#coastalHero QLabel {
+    background: transparent;
+    color: #fdf2fa;
+}
+
+QLabel#coastalHeading {
+    font-size: 43px;
+    font-weight: 800;
+}
+
+QLabel#coastalStatus {
+    font-size: 12px;
+    font-weight: 600;
+    color: #ffb7a5;
+}
+
+QLabel#coastalSelection {
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff4f5;
+    padding-bottom: 4px;
+}
+
+QWidget#coastalHero QPushButton {
+    min-height: 26px;
+    border: 1px solid #84718d;
+    border-radius: 8px;
+    background: #2e253b;
+    color: #fff3fa;
+    font-weight: 600;
+    padding: 4px 12px;
+}
+
+QWidget#coastalHero QPushButton#coastalLaunch {
+    background: #ffad93;
+    border-color: #ffad93;
+    color: #241320;
+    font-weight: 800;
+}
+
+QWidget#coastalHero QPushButton:hover {
+    background: #4a3652;
+}
+
+QWidget#coastalHero QPushButton#coastalLaunch:hover {
+    background: #ffd1b6;
+}
+
+QWidget#coastalHero QPushButton:focus {
+    border-color: #b1f4e2;
+}
+
+QWidget#coastalHero QPushButton:disabled {
+    background: #2b2534;
+    border-color: #55475e;
+    color: #bbabbf;
+}

@@ -57,3 +57,11 @@ python tools/benchmark.py --baseline 'D:\Baseline\kyty_emulator.exe' --candidate
 ```
 
 GTA VI status is **untested**. The compatibility milestones are first guest frame, menu, loaded save, interactive gameplay and a repeatable streaming-heavy driving route. Record game serial/version, emulator commit and the first concrete blocker when supported test files become available.
+
+## Launcher
+
+The Coastal launcher highlights GTA VI in the game library when its title metadata matches.
+Use **Game folders** to add existing directories, then **Game settings** for Vulkan device,
+window resolution, presentation mode, shader cache, pipeline warmup and ZArchive read-ahead.
+The **Benchmark** button captures up to 120 seconds for the selected game and writes a new
+JSON file. The coastal banner is original generated artwork.
