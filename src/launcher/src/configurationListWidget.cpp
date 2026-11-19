@@ -814,6 +814,20 @@ void ConfigurationListWidget::ScanGameDirectory() {
 	SelectItem(selected_item);
 }
 
+void ConfigurationListWidget::AddGameFolder() {
+	const auto directory = QFileDialog::getExistingDirectory(
+	    this, tr("Add a game folder"), m_game_dirs.value(0, QDir::homePath()));
+	if (directory.isEmpty()) {
+		return;
+	}
+	const auto directories = NormalizeGameDirectories(m_game_dirs + QStringList {directory});
+	if (directories != m_game_dirs) {
+		m_game_dirs = directories;
+		WriteSettings();
+		ScanGameDirectory();
+	}
+}
+
 void ConfigurationListWidget::OpenSelectedGameSettings() {
 	if (m_selected_item != nullptr) {
 		edit_configuration();

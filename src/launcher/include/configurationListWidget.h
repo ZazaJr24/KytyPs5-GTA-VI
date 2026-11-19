@@ -41,7 +41,7 @@ public:
 	[[nodiscard]] std::unique_ptr<Configuration>
 	CreateConfiguration(const ConfigurationItem& item) const;
 
-	void OpenGameFolders() { edit_global_settings(); }
+	void AddGameFolder();
 	void OpenSelectedGameSettings();
 	void ScanGameDirectory();
 	void ViewTrophies();

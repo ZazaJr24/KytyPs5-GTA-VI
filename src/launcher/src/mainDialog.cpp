@@ -282,7 +282,7 @@ void MainDialogPrivate::CreateHero() {
 	m_settings = make_button(tr("Game settings"));
 	m_benchmark = make_button(tr("Benchmark"));
 	m_benchmark->setToolTip(tr("Capture frame timing and resource counters for up to 120 seconds"));
-	auto* folders = make_button(tr("Game folders"));
+	auto* folders = make_button(tr("Add game folder"));
 	auto* actions = new QHBoxLayout;
 	actions->setSpacing(7);
 	actions->addWidget(m_launch);
@@ -295,7 +295,7 @@ void MainDialogPrivate::CreateHero() {
 	connect(m_launch, &QPushButton::clicked, this, [this] { Run({}); });
 	connect(m_settings, &QPushButton::clicked, m_ui->widget,
 	        &ConfigurationListWidget::OpenSelectedGameSettings);
-	connect(folders, &QPushButton::clicked, m_ui->widget, &ConfigurationListWidget::OpenGameFolders);
+	connect(folders, &QPushButton::clicked, m_ui->widget, &ConfigurationListWidget::AddGameFolder);
 	connect(m_benchmark, &QPushButton::clicked, this, &MainDialogPrivate::ChooseBenchmarkOutput);
 }
 

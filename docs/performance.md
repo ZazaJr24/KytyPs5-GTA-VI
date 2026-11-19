@@ -61,7 +61,7 @@ GTA VI status is **untested**. The compatibility milestones are first guest fram
 ## Launcher
 
 The Coastal launcher highlights GTA VI in the game library when its title metadata matches.
-Use **Game folders** to add existing directories, then **Game settings** for Vulkan device,
+Use **Add game folder** to add existing directories, then **Game settings** for Vulkan device,
 window resolution, presentation mode, shader cache, pipeline warmup and ZArchive read-ahead.
 The **Benchmark** button captures up to 120 seconds for the selected game and writes a new
 JSON file. The coastal banner is original generated artwork.
